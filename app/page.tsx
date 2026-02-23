@@ -5,43 +5,53 @@ import { HomeView } from "./pages/HomeView";
 import { PendingOrdersView } from "./pages/PendingOrdersView";
 import { Home, LogOut, X, ClipboardList, ChevronLeft } from "lucide-react";
 import { MenuModel } from "./types/MenuModel";
-import { getAllMenus } from "./api/MenuApi";
 import { OrderView } from "./pages/OrderView";
+import { LoginView } from "./pages/LoginView";
+import { useMsal } from "@azure/msal-react"
+import { loginRequest } from "../authConfig";
+import { validateLogin } from "./api/LoginApi";
 
-type View = "home" | "visitas" | "agregar" | "emergencias" | "emergencia-detalle" | "pedidos" | "gestionar-pedidos";
+type View = "login" | "home" | "visitas" | "agregar" | "emergencias" | "emergencia-detalle" | "pedidos" | "gestionar-pedidos";
 
-interface EmergencyVisit {
-  id: string;
-  supervisor: string;
-  store: string;
-  visitType: string;
-  assignedDate: Date;
-  comments: string;
-  status: "pending" | "in-progress";
-  lastVisit: {
-    lat: number;
-    lng: number;
-    storeName: string;
-  };
-  newVisit: {
-    lat: number;
-    lng: number;
-    storeName: string;
-  };
-}
 
 export default function App() {
   const [viewHistory, setViewHistory] = useState<View[]>(["home"]);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [selectedEmergencyVisit, setSelectedEmergencyVisit] = useState<EmergencyVisit | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [menus, setMenus] = useState<MenuModel[]>([]);
+  const { instance, accounts } = useMsal();
+  const [userData, setUserData] = useState<{nombre: string | null}>( {nombre: null} );
 
   const currentView = viewHistory[viewHistory.length - 1];
 
   useEffect(() => {
-    getAllMenus().then(setMenus).catch(console.error);
-  }, []);
+    if (accounts.length > 0) {
+      const email = accounts[0].username;
+      
+      validateLogin(email)
+        .then((data) => {
+          setUserData({ nombre: data.user.nombre });
+        })
+        .catch(console.error);
+    }
+  }, [accounts]);
+
+  const saveCleanSession = (account: any) => {
+  const userPayload = {
+    name: account.name,
+    email: account.username,
+    localId: account.localAccountId,
+    tenantId: account.tenantId,
+    lastLogin: new Date().toISOString()
+  };
+  // Guardamos nuestra propia versión limpia
+  localStorage.setItem("user_session", JSON.stringify(userPayload));
+};
+
+useEffect(() => {
+  if (accounts.length > 0) {
+    // Si hay una cuenta activa, guardamos la versión limpia en LocalStorage
+    saveCleanSession(accounts[0]);
+  }
+}, [accounts]);
 
   // Funciones de navegación con historial
   const navigateTo = (newView: View) => {
@@ -55,15 +65,22 @@ export default function App() {
   };
 
   const handleLogin = () => {
-    setIsAuthenticated(true);
-    navigateTo("home");
+    instance.loginRedirect(loginRequest).catch(e => {
+      console.log(e);
+    })
   };
 
   const handleLogout = () => {
-    setIsAuthenticated(false);
-    setViewHistory(["home"]);
-    setIsMobileMenuOpen(false);
-  };
+  localStorage.removeItem("user_session");
+  instance.logoutRedirect({
+    account: accounts[0],
+    postLogoutRedirectUri: "http://localhost:3000"
+  });
+};
+
+  if (accounts.length === 0) {
+    return <LoginView onLogin={handleLogin}/>;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
@@ -73,6 +90,7 @@ export default function App() {
         onLogout={handleLogout}
         onMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         isMobileMenuOpen={isMobileMenuOpen}
+        userName={userData.nombre}
         // user={currentUser}
       />
       <div className="flex pt-[80px]">
@@ -87,7 +105,7 @@ export default function App() {
                 <span className="font-medium">Atrás</span>
               </button>
             )}
-            {currentView === "home" && <HomeView menus={menus} onNavigate={navigateTo} />}
+            {currentView === "home" && <HomeView onNavigate={navigateTo} />}
             {currentView === "pedidos" && <OrderView onBack={goBack} />}
             {currentView === "gestionar-pedidos" && <PendingOrdersView />}
           </div>
@@ -106,7 +124,7 @@ export default function App() {
                 <span>Inicio</span>
               </button>
               <button
-                onClick={handleLogout}
+                onClick={() => handleLogout()}
                 className="w-full text-left px-5 py-4 rounded-xl transition-all text-red-600 hover:bg-red-50 flex items-center group"
               >
                 <LogOut size={20} className="mr-3" />

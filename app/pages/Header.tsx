@@ -9,7 +9,7 @@ type View =
   | "emergencia-detalle";
 
 interface HeaderProps {
-//   currentView: View;
+  userName: string | null;
   onViewChange: (view: View) => void;
   onLogout: () => void;
   onMenuToggle: () => void;
@@ -26,6 +26,7 @@ export function Header({
   isMobileMenuOpen,
   // user,
 }: HeaderProps) {
+
   return (
     <header className="fixed top-0 left-0 right-0 bg-[#2183AE] shadow-lg border-b border-blue-600/20 z-30">
       <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-5">
@@ -42,7 +43,7 @@ export function Header({
             </div>
             <div className="text-right leading-tight">
               <p className="text-gray-900 text-sm font-semibold">
-                {/* {localStorage.getItem("nombre")} */}
+                {localStorage.getItem("nombre")}
               </p>
               {/* <p className="text-gray-800 text-xs">{localStorage.getItem("puesto")}</p> */}
               <p className="text-gray-800 text-xs">{date}</p>

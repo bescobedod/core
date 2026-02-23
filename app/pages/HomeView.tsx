@@ -2,6 +2,8 @@
 
 import { MenuModel } from "../types/MenuModel";
 import * as Icons from "lucide-react";
+import { useEffect, useState } from "react";
+import { getAllMenus } from "../api/MenuApi";
 
 // Mapa BD.nombre_menu → Vista en tu app
 const viewMap: Record<string, string> = {
@@ -21,12 +23,16 @@ function getIcon(name: string) {
 }
 
 export function HomeView({
-  menus,
   onNavigate
 }: {
-  menus: MenuModel[];
   onNavigate: (v: any) => void;
 }) {
+  const [menus, setMenus] = useState<MenuModel[]>([]);
+
+  useEffect(() => {
+    getAllMenus().then(setMenus).catch(console.error);
+  }, []);
+  
   return (
     <div className="flex items-center justify-center min-h-[calc(100vh-12rem)]">
       <div className="max-w-4xl w-full">
