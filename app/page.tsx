@@ -3,8 +3,8 @@ import { useState, useEffect } from "react";
 import { Header } from "./pages/Header";
 import { HomeView } from "./pages/HomeView";
 import { PendingOrdersView } from "./pages/PendingOrdersView";
-import { Home, LogOut, X, ClipboardList, ChevronLeft } from "lucide-react";
-import { MenuModel } from "./types/MenuModel";
+import { RegisterView } from "./pages/RegisterView";
+import { Home, LogOut, X, ChevronLeft } from "lucide-react";
 import { OrderView } from "./pages/OrderView";
 import { LoginView } from "./pages/LoginView";
 import { useMsal } from "@azure/msal-react"
@@ -13,47 +13,81 @@ import { validateLogin } from "./api/LoginApi";
 
 type View = "login" | "home" | "visitas" | "agregar" | "emergencias" | "emergencia-detalle" | "pedidos" | "gestionar-pedidos";
 
-
 export default function App() {
+
+  const [isClient, setIsClient] = useState(false);
+  const [loginMethod, setLoginMethod] = useState<string | null>(null);
+
   const [viewHistory, setViewHistory] = useState<View[]>(["home"]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { instance, accounts } = useMsal();
-  const [userData, setUserData] = useState<{nombre: string | null}>( {nombre: null} );
+  const [userData, setUserData] = useState<{nombre: string | null}>({nombre: null});
+  const [isValidated, setIsValidated] = useState<boolean | null>(null);
 
   const currentView = viewHistory[viewHistory.length - 1];
 
   useEffect(() => {
+    setIsClient(true);
+    const method = localStorage.getItem("login_method");
+    setLoginMethod(method);
+  }, []);
+
+  useEffect(() => {
+    if (!isClient) return;
+
     if (accounts.length > 0) {
       const email = accounts[0].username;
-      
+
       validateLogin(email)
         .then((data) => {
-          setUserData({ nombre: data.user.nombre });
+          if (data.ok) {
+            setUserData({ nombre: data.user.nombre });
+            setIsValidated(true);
+            setLoginMethod("microsoft");
+          } else {
+            setIsValidated(false);
+          }
         })
-        .catch(console.error);
+        .catch(() => {
+          setIsValidated(false);
+        });
+    }
+  }, [accounts, isClient]);
+
+  useEffect(() => {
+    if (!isClient) return;
+
+    if (loginMethod === "internal") {
+      const token = localStorage.getItem("token");
+
+      if (token) {
+        setUserData({ nombre: localStorage.getItem("nombre") });
+        setIsValidated(true);
+      } else {
+        setIsValidated(false);
+      }
+    }
+  }, [loginMethod, isClient]);
+
+  const saveCleanSession = (account: any) => {
+    const userPayload = {
+      name: account.name,
+      email: account.username,
+      localId: account.localAccountId,
+      tenantId: account.tenantId,
+      lastLogin: new Date().toISOString()
+    };
+    localStorage.setItem("user_session", JSON.stringify(userPayload));
+    localStorage.setItem("login_method", "microsoft");
+    setLoginMethod("microsoft");
+  };
+
+  useEffect(() => {
+    if (accounts.length > 0) {
+      saveCleanSession(accounts[0]);
     }
   }, [accounts]);
 
-  const saveCleanSession = (account: any) => {
-  const userPayload = {
-    name: account.name,
-    email: account.username,
-    localId: account.localAccountId,
-    tenantId: account.tenantId,
-    lastLogin: new Date().toISOString()
-  };
-  // Guardamos nuestra propia versión limpia
-  localStorage.setItem("user_session", JSON.stringify(userPayload));
-};
-
-useEffect(() => {
-  if (accounts.length > 0) {
-    // Si hay una cuenta activa, guardamos la versión limpia en LocalStorage
-    saveCleanSession(accounts[0]);
-  }
-}, [accounts]);
-
-  // Funciones de navegación con historial
   const navigateTo = (newView: View) => {
     setViewHistory([...viewHistory, newView]);
   };
@@ -64,34 +98,55 @@ useEffect(() => {
     }
   };
 
-  const handleLogin = () => {
-    instance.loginRedirect(loginRequest).catch(e => {
-      console.log(e);
-    })
+  const handleLogout = () => {
+    const method = localStorage.getItem("login_method");
+
+    if (method === "microsoft") {
+      localStorage.clear();
+      instance.logoutRedirect({
+        account: accounts[0],
+        postLogoutRedirectUri: "http://localhost:3000"
+      });
+    } else {
+      localStorage.clear();
+      window.location.reload();
+    }
   };
 
-  const handleLogout = () => {
-  localStorage.removeItem("user_session");
-  instance.logoutRedirect({
-    account: accounts[0],
-    postLogoutRedirectUri: "http://localhost:3000"
-  });
-};
+  if (!isClient) return null;
 
-  if (accounts.length === 0) {
-    return <LoginView onLogin={handleLogin}/>;
+  if (!loginMethod) {
+    return (
+      <LoginView
+        onMicrosoftLogin={() => instance.loginRedirect(loginRequest)}
+        onAuthenticated={() => {
+          const method = localStorage.getItem("login_method");
+          setLoginMethod(method);
+        }}
+      />
+    );
+  }
+
+  if (isValidated === null) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        Validando sesión...
+      </div>
+    );
+  }
+
+  if (isValidated === false) {
+    return <RegisterView />;
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <Header 
-        // currentView={currentView} 
         onViewChange={navigateTo} 
         onLogout={handleLogout}
         onMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         isMobileMenuOpen={isMobileMenuOpen}
         userName={userData.nombre}
-        // user={currentUser}
       />
       <div className="flex pt-[80px]">
         <div className="flex-1 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 lg:mr-64">
