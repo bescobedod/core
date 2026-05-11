@@ -18,7 +18,6 @@ export async function validarYObtenerPedido(
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.details || errorData.error || "Error desconocido en el servidor");
     }
-    console.log('FUNCIONA')
 
     return response.json();
 }
@@ -35,7 +34,6 @@ export async function createPedido(pedido: any) {
 
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.log(errorData.details || errorData.error)
         throw new Error(errorData.details || errorData.error || "Error desconocido en el servidor al crear el pedido");
     }
 

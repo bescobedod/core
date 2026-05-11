@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { ParticleBackground } from "./ParticleBackground";
 
 interface RegisterViewProps {
   onRegisterSuccess?: () => void;
@@ -65,20 +66,21 @@ export function RegisterView({ onRegisterSuccess }: RegisterViewProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#2183AE] flex items-center justify-center p-4 sm:p-6">
-      <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 lg:p-10 w-full max-w-md">
-        
-        <div className="text-center mb-8">
-          <div className="inline-block p-4 bg-[#2183AE] rounded-2xl mb-4">
-            <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9l-6 6-6-6" />
+    <div className="min-h-screen bg-[#2183AE] flex items-center justify-center p-4 sm:p-6 relative overflow-hidden">
+      <ParticleBackground />
+      <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 lg:p-10 w-full max-w-md relative z-10 pointer-events-auto">
+        <div className="text-center mb-6 sm:mb-8">
+          <div className="inline-block p-3 sm:p-4 bg-[#2183AE] rounded-2xl mb-4">
+            <svg className="w-10 h-10 sm:w-12 sm:h-12 text-gray-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
           </div>
-          <h1 className="text-2xl font-semibold text-gray-900 mb-2">Registro de Usuario</h1>
-          <p className="text-gray-600 text-sm">Completa la información para crear tu cuenta</p>
+          <h1 className="text-gray-900 mb-2">Registro de Usuario</h1>
+          <p className="text-gray-600 text-sm sm:text-base">
+            Completa la información para crear tu cuenta
+          </p>
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
 
           <div>
             <Label htmlFor="nombre">Nombre</Label>

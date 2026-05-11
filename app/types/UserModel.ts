@@ -1,15 +1,44 @@
 export interface UserModel {
-    id_usuario?: string,
-    estado: number,
+    id_users?: number,
+    codigo_user: string,
     id_rol: number,
-    nombre_usuario: string,
+    first_name: string,
+    second_name: string,
+    first_last_name: string,
+    second_last_name: string,
     email: string,
-    password_hash: string,
-    nombre: string,
-    apellido: string,
-    id_departamento: number,
-    esta_activo: boolean,
-    fecha_ultimo_login: Date,
-    fecha_creacion: Date,
-    fecha_actualizacion: Date
+    password: string,
+    dpi: string,
+    fecha_nacimiento: Date,
+    direccion: string;
+    puesto_trabajo: string,
+    baja: boolean,
+    division: number,
+    image_profile: string,
+    id_departamento: string,
+    id_area: string
+}
+
+export interface UserTemporalModel {
+    id_users: number;
+    first_name: string;
+    first_last_name: string;
+    email: string;
+    id_area: string;
+    nombre_area: string;
+};
+
+export interface VwUsuariosModel {
+    id_users: number;
+    codigo_user: string;
+    baja: boolean;
+    id_rol: number;
+    nombre_rol: string;
+    email: string;
+    nombre: string;
+    id_departamento: string;
+    nombre_departamento: string;
+    puesto_trabajo: string;
+    id_area: string;
+    nombre_area: string;
 }

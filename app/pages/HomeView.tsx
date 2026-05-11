@@ -10,7 +10,12 @@ const viewMap: Record<string, string> = {
   OrderView: "pedidos",
   PendingOrdersView: "gestionar-pedidos",
   HomeView: "home",
-  // agrega los que necesites
+  PurchaseRequestView: "compras",
+  FixedAssetsAllocationView: 'asignacion-af',
+  PurchasesView: 'solicitudes',
+  AcquisitionStrategiesView: 'estrategias',
+  DepartmentsView: 'departamentos',
+  EmployeeListView: 'personal'
 };
 
 // Función para obtener el ícono desde lucide-react
@@ -34,7 +39,7 @@ export function HomeView({
   }, []);
   
   return (
-    <div className="flex items-center justify-center min-h-[calc(100vh-12rem)]">
+    <div className="flex items-center justify-center min-h-[calc(100vh-12rem)] py-6">
       <div className="max-w-4xl w-full">
         <div className="text-center mb-6 sm:mb-8">
           <h1 className="text-gray-900 mb-3">Bienvenido al Sistema</h1>
@@ -55,7 +60,7 @@ export function HomeView({
                   className="group bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-gray-200 hover:shadow-2xl hover:border-[#2183AE] transition-all duration-300 transform hover:-translate-y-1 w-full sm:w-[calc(50%-1rem)]"
                 >
                   <div className="flex flex-col items-center text-center">
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-[#2183AE] to-[#2183AE] rounded-2xl flex items-center justify-center mb-4 sm:mb-6 group-hover:scale-110 transition-transform duration-300">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-[#2183AE] to-[#1a6a8f] rounded-2xl flex items-center justify-center mb-4 sm:mb-6 group-hover:scale-110 transition-transform duration-300">
                       <Icon className="w-8 h-8 sm:w-10 sm:h-10 text-gray-900" />
                     </div>
                     <h2 className="text-gray-900 mb-2 sm:mb-3">{m.nombre}</h2>

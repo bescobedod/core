@@ -15,10 +15,10 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Core",
-  description: "Portal Core"//,
-  // icons: {
-  //   icon: "/LOGOPINULITOORIGINAL.png",
-  // },
+  description: "Portal Core",
+  icons: {
+    icon: "/alisa_logo.png",
+  },
 };
 
 export default function RootLayout({
