@@ -4,6 +4,8 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { ParticleBackground } from "./ParticleBackground";
 import { login } from "../api/LoginApi";
+import Image from "next/image";
+import logo from "@/assets/img/Alisa-Sin-Fondo.png";
 
 interface LoginViewProps {
   onMicrosoftLogin: () => void;
@@ -55,10 +57,15 @@ export function LoginView({ onMicrosoftLogin, onAuthenticated }: LoginViewProps)
       <ParticleBackground />
       <div className="bg-white rounded-2xl shadow-2xl p-6 sm:p-8 lg:p-10 w-full max-w-md relative z-10 pointer-events-auto">
         <div className="text-center mb-6 sm:mb-8">
-          <div className="inline-block p-3 sm:p-4 bg-[#2183AE] rounded-2xl mb-4">
-            <svg className="w-10 h-10 sm:w-12 sm:h-12 text-gray-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
+          <div className="inline-block p-4 rounded-2xl mb-4">
+            <Image
+              src={logo}
+              width={85}
+              height={90}
+              alt="Logo Pinulito"
+              loading="eager"
+              style={{ width: "100%", height: "auto" }}
+            />
           </div>
           <h1 className="text-gray-900 mb-2">Bienvenido</h1>
           <p className="text-gray-600 text-sm sm:text-base">

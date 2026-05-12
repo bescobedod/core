@@ -19,3 +19,14 @@ export interface ValidarPedidoResponse {
     header?: any;
     categorias: SupplySAPCategory[];
 }
+
+export interface ItemGroups {
+    id: string;
+    name: string;
+}
+
+export interface Item {
+    ItemCode: string;
+    ItemName: string;
+    SalesUnit: string;
+}

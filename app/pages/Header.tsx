@@ -1,12 +1,18 @@
 // import logo from "@/assets/img/LOGOPINULITOORIGINAL.png";
 import { Menu, User } from "lucide-react";
+import Image from "next/image";
+import logo from "@/assets/img/imagen (4).png";
 
 type View =
   | "home"
-  | "visitas"
-  | "agregar"
-  | "emergencias"
-  | "emergencia-detalle";
+  | "compras"
+  | "pedidos"
+  | "gestionar-pedidos"
+  | "asignacion-af"
+  | "solicitudes"
+  | "estrategias"
+  | "departamentos"
+  | "personal";
 
 interface HeaderProps {
   userName: string | null;
@@ -27,31 +33,51 @@ export function Header({
   // user,
 }: HeaderProps) {
 
+  const navigateTo = (view: View) => {
+    onViewChange(view);
+  };
+
   return (
-    <header className="fixed top-0 left-0 right-0 bg-[#2183AE] shadow-lg border-b border-blue-600/20 z-30">
+    <header className="fixed top-0 left-0 right-0 bg-gradient-to-r from-[#2183AE] to-[#1a6a8f] shadow-lg border-b border-blue-600/20 z-30 mb-10">
       <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-5">
         <div className="flex justify-between items-center gap-4">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <div className="pl-3 text-white-600 font-bold truncate">
-              <h2 className="text-3xl">Administrador Core</h2>
-              <p className="text-lg">Sistema de Gestión Administrativa</p>
+          <button
+          onClick={() => navigateTo("home")}
+          className="flex items-center gap-4 cursor-pointer group"
+          >
+            <div className="relative w-12 h-12 sm:w-16 sm:h-16 flex-shrink-0">
+              <Image
+              src={logo}
+              alt="Logo Pinulito"
+              fill
+              className="object-contain"
+              priority
+              />
             </div>
-          </div>
-          <div className="hidden md:flex items-center gap-3 px-4 py-2 bg-white/20 backdrop-blur-sm rounded-xl border border-blue-600/30">
-            <div className="w-9 h-9 bg-gray-900 rounded-full flex items-center justify-center">
-              <User size={18} className="text-blue" />
+            <div className="flex flex-col justify-center text-left border-l border-white/20 pl-4">
+              <h1 className="text-xl sm:text-2xl md:text-3xl text-white font-bold leading-none">
+                Administrador Core
+              </h1>
+              <p className="text-xs sm:text-sm md:text-base text-white/80 font-medium mt-1">
+                Sistema de Gestión Administrativa
+              </p>
+            </div>
+          </button>
+          <div className="hidden md:flex items-center gap-3 px-4 py-2 bg-white/20 backdrop-blur-sm rounded-xl border border-blue-600/30 cursor-pointer">
+            <div className="w-9 h-9 bg-white rounded-full flex items-center justify-center">
+              <User size={18} className="text-[#2183AE]" />
             </div>
             <div className="text-right leading-tight">
-              <p className="text-gray-900 text-sm font-semibold">
+              <p className="text-white text-sm font-semibold">
                 {localStorage.getItem("nombre")}
               </p>
-              {/* <p className="text-gray-800 text-xs">{localStorage.getItem("puesto")}</p> */}
-              <p className="text-gray-800 text-xs">{date}</p>
+              <p className="text-white text-xs">{localStorage.getItem("puesto")}</p>
+              <p className="text-white text-xs">{date}</p>
             </div>
           </div>
           <div className="md:hidden flex items-center gap-2 px-3 py-2 bg-white/20 backdrop-blur-sm rounded-lg border border-blue-600/30">
             <div className="w-7 h-7 bg-gray-900 rounded-full flex items-center justify-center">
-              <User size={14} className="text-blue" />
+              <User size={14} className="text-white" />
             </div>
             <div className="text-right leading-tight">
               <p className="text-gray-900 text-xs font-semibold">

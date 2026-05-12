@@ -15,8 +15,9 @@ export async function validateLogin(email: string) {
 
   if (data.ok) {
     localStorage.setItem("token", data.token);
-    localStorage.setItem("nombre", data.user.nombre);
-    localStorage.setItem("login_method", "microsoft");
+    localStorage.setItem("nombre", data.user.first_name + ' ' + data.user.first_last_name);
+    localStorage.setItem("login_method", "internal");
+    localStorage.setItem("puesto", data.user.puesto_trabajo);
   }
 
   return data;
@@ -37,8 +38,9 @@ export async function login(identifier: string, password: string) {
   const data = await response.json();
 
   localStorage.setItem("token", data.token);
-  localStorage.setItem("nombre", data.user.nombre);
+  localStorage.setItem("nombre", data.user.first_name + ' ' + data.user.first_last_name);
   localStorage.setItem("login_method", "internal");
+  localStorage.setItem("puesto", data.user.puesto_trabajo);
 
   return data;
 }

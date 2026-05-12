@@ -10,8 +10,25 @@ import { LoginView } from "./pages/LoginView";
 import { useMsal } from "@azure/msal-react"
 import { loginRequest } from "../authConfig";
 import { validateLogin } from "./api/LoginApi";
+import { PurchaseRequestView } from "./pages/PurchaseRequestView";
+import { FixedAssetsAllocationView } from "./pages/FixedAssetsAllocationView";
+import { PurchasesView } from "./pages/PurchasesView";
+import { AcquisitionStrategiesView } from "./pages/AcquisitionStrategiesView";
+import { DepartmentsView } from "./pages/DepartmentsView";
+import { EmployeeListView } from "./pages/EmployeeListView";
+import { UserModel } from "./types/UserModel";
 
-type View = "login" | "home" | "visitas" | "agregar" | "emergencias" | "emergencia-detalle" | "pedidos" | "gestionar-pedidos";
+type View =
+  "login"
+  | "home"
+  | "compras"
+  | "pedidos"
+  | "gestionar-pedidos"
+  | "asignacion-af"
+  | "solicitudes"
+  | "estrategias"
+  | "departamentos"
+  | "personal";
 
 export default function App() {
 
@@ -23,6 +40,7 @@ export default function App() {
   const { instance, accounts } = useMsal();
   const [userData, setUserData] = useState<{nombre: string | null}>({nombre: null});
   const [isValidated, setIsValidated] = useState<boolean | null>(null);
+  const [selectedEmployee, setSelectedEmployee] = useState<UserModel | null>(null);
 
   const currentView = viewHistory[viewHistory.length - 1];
 
@@ -69,6 +87,29 @@ export default function App() {
     }
   }, [loginMethod, isClient]);
 
+  useEffect(() => {
+    if (!isClient) return;
+
+    if (loginMethod === "microsoft") {
+      if (accounts.length > 0) {
+        const email = accounts[0].username;
+
+        validateLogin(email)
+        .then((data) => {
+          if (data.ok) {
+            setUserData({ nombre: data.user.nombre });
+            setIsValidated(true);
+          } else {
+            setIsValidated(false);
+          }
+        })
+        .catch(() => setIsValidated(false));
+      } else {
+        setIsValidated(false);
+      }
+    }
+  }, [accounts, loginMethod, isClient]);
+
   const saveCleanSession = (account: any) => {
     const userPayload = {
       name: account.name,
@@ -113,6 +154,10 @@ export default function App() {
     }
   };
 
+  const handleSelectEmployee = (employee: UserModel) => {
+    setSelectedEmployee(employee);
+  };
+
   if (!isClient) return null;
 
   if (!loginMethod) {
@@ -154,7 +199,7 @@ export default function App() {
             {currentView !== "home" && (
               <button
                 onClick={goBack}
-                className="mb-6 flex items-center text-[#2183AE] hover:text-[#1a6391] transition-colors"
+                className="mb-6 flex items-center text-[#2183AE] hover:text-[#1a6391] transition-colors py-2"
               >
                 <ChevronLeft size={20} className="mr-2" />
                 <span className="font-medium">Atrás</span>
@@ -163,6 +208,12 @@ export default function App() {
             {currentView === "home" && <HomeView onNavigate={navigateTo} />}
             {currentView === "pedidos" && <OrderView onBack={goBack} />}
             {currentView === "gestionar-pedidos" && <PendingOrdersView />}
+            {currentView === "compras" && <PurchaseRequestView onBack={goBack} />}
+            {currentView === "asignacion-af" && <FixedAssetsAllocationView onBack={goBack} />}
+            {currentView === "solicitudes" && <PurchasesView onBack={goBack} />}
+            {currentView === "estrategias" && <AcquisitionStrategiesView onBack={goBack} />}
+            {currentView === "departamentos" && <DepartmentsView onBack={goBack} />}
+            {currentView === "personal" && <EmployeeListView onSelectEmployee={handleSelectEmployee} onBack={goBack}  />}
           </div>
         </div>
         <div className="hidden lg:block w-64 bg-white shadow-2xl border-l border-gray-200 flex-shrink-0 fixed top-[100px] right-0 bottom-0 h-[calc(100vh-80px)]">
@@ -191,10 +242,10 @@ export default function App() {
         {isMobileMenuOpen && (
           <>
             <div 
-              className="lg:hidden fixed inset-0 bg-black/50 z-40 top-[80px]"
+              className="lg:hidden fixed inset-0 bg-black/50 z-40 top-[109px]"
               onClick={() => setIsMobileMenuOpen(false)}
             />
-            <div className="lg:hidden fixed top-[80px] right-0 bottom-0 w-64 bg-white shadow-2xl z-50 transform transition-transform duration-300">
+            <div className="lg:hidden fixed top-[109px] right-0 bottom-0 w-64 bg-white shadow-2xl z-50 transform transition-transform duration-300">
               <div className="p-6 flex flex-col h-full">
                 <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
                   <h2 className="text-gray-900">Menú</h2>
