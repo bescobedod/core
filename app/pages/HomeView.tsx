@@ -15,7 +15,7 @@ const viewMap: Record<string, string> = {
   PurchasesView: 'solicitudes',
   AcquisitionStrategiesView: 'estrategias',
   DepartmentsView: 'departamentos',
-  EmployeeListView: 'personal'
+  ExternalPersonnelView: 'personal'
 };
 
 // Función para obtener el ícono desde lucide-react

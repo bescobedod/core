@@ -115,7 +115,7 @@ export async function getSolicitudesCompraByUser(
     fin?: string,
     estado?: string,
     page: number = 1,
-    limit: number = 3
+    limit: number = 20
 ): Promise<SolicitudesCompraResponse> {
     const params = new URLSearchParams();
 
@@ -132,6 +132,8 @@ export async function getSolicitudesCompraByUser(
             'Content-Type': 'application/json'
         }
     });
+
+    console.log(response)
 
     if (!response.ok) {
         const text = await response.text().catch(() => '');
@@ -173,7 +175,7 @@ export async function getSolicitudesCompra(
     fin?: string,
     estado?: string,
     page: number = 1,
-    limit: number = 3
+    limit: number = 20
 ): Promise<SolicitudesCompraResponse> {
     const params = new URLSearchParams();
 

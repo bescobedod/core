@@ -22,7 +22,7 @@ const MicrosoftLogo = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-export function LoginView({ onMicrosoftLogin, onAuthenticated }: LoginViewProps) {
+export function LoginView({ onMicrosoftLogin, onRegister, onAuthenticated }: LoginViewProps) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -122,6 +122,17 @@ export function LoginView({ onMicrosoftLogin, onAuthenticated }: LoginViewProps)
           >
             {isLoading ? "Ingresando..." : "Iniciar Sesión"}
           </Button>
+          {/* <div className="pt-4 mt-4 border-t border-gray-200">
+            <Button
+            type="button"
+            onClick={onRegister}
+            variant="ghost"
+            disabled={isLoading}
+            className="w-full h-10 sm:h-12 sm:mt-2 border border-[#2183AE] bg-[#2183AE] text-white hover:bg-[#2183AE]/10 hover:text-[#2183AE]"
+            >
+              Registrarse como Invitado
+            </Button>
+          </div> */}
         </form>
       </div>
     </div>

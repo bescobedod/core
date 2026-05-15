@@ -15,7 +15,7 @@ import { FixedAssetsAllocationView } from "./pages/FixedAssetsAllocationView";
 import { PurchasesView } from "./pages/PurchasesView";
 import { AcquisitionStrategiesView } from "./pages/AcquisitionStrategiesView";
 import { DepartmentsView } from "./pages/DepartmentsView";
-import { EmployeeListView } from "./pages/EmployeeListView";
+import { ExternalPersonnelView } from "./pages/ExternalPersonnelView";
 import { UserModel } from "./types/UserModel";
 
 type View =
@@ -213,7 +213,7 @@ export default function App() {
             {currentView === "solicitudes" && <PurchasesView onBack={goBack} />}
             {currentView === "estrategias" && <AcquisitionStrategiesView onBack={goBack} />}
             {currentView === "departamentos" && <DepartmentsView onBack={goBack} />}
-            {currentView === "personal" && <EmployeeListView onSelectEmployee={handleSelectEmployee} onBack={goBack}  />}
+            {currentView === "personal" && <ExternalPersonnelView onBack={goBack}  />}
           </div>
         </div>
         <div className="hidden lg:block w-64 bg-white shadow-2xl border-l border-gray-200 flex-shrink-0 fixed top-[100px] right-0 bottom-0 h-[calc(100vh-80px)]">
