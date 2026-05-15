@@ -1,5 +1,5 @@
 export interface SolicitudCompraModel {
-    id?: number;
+    id: string;
     numero_requisicion: string;
     departamento_id: string;
     solicitado_por: string;
@@ -15,10 +15,12 @@ export interface SolicitudCompraModel {
     es_activo_fijo: boolean;
     DocEntry: number;
     DocNum: number;
+    codigo_departamento: string;
+    id_empresa: string;
 }
 
 export interface LineaSolicitudCompraModel {
-    id?: number;
+    id: string;
     requisicion_id: string;
     numero_linea: number;
     codigo_articulo: string;
@@ -36,6 +38,11 @@ export interface LineaSolicitudCompraModel {
     esValidadoTemporal: boolean;
     imagen_s3_key: string;
     imagen_nombre: string;
+}
+
+export interface Empresa {
+  id: string;
+  nombre: string;
 }
 
 export interface VwSolicitudCompra {
@@ -59,6 +66,9 @@ export interface VwSolicitudCompra {
     items: LineaSolicitudCompraModel[];
     DocEntry: number;
     DocNum: number;
+    codigo_departamento: string;
+    id_empresa: string;
+    empresa?: Empresa;
 }
 
 export interface VwAprobadoresSolicitudCompra {

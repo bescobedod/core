@@ -1,15 +1,14 @@
 import { motion, AnimatePresence } from "motion/react";
 import { useEffect, useState } from 'react';
 import {
-  ChevronUp,
-  ChevronDown,
   ListCheck,
   CheckCircle,
   ShoppingBag,
   X,
   Edit3,
   Save,
-  Loader2
+  Loader2,
+  Search
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Label } from '../ui/label';
@@ -17,7 +16,7 @@ import { Input } from '../ui/input';
 import { Card } from "../ui/card";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { SolicitudCompraModel, VwSolicitudCompra } from "../types/SolicitudModel";
+import { VwSolicitudCompra } from "../types/SolicitudModel";
 import {
     getSolicitudCompraAF,
     getArticulosBySolicitud,
@@ -30,68 +29,78 @@ interface FixedAssetsAllocationProps {
 }
 
 export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProps) {
-    const [searchCodes, setSearchCodes] = useState(false);
-    const [selectedPurchase, setSelectedPurchase] = useState<VwSolicitudCompra | null>(null);
-    const [showTracking, setShowTracking] = useState(false);
-    const [editingCodes, setEditingCodes] = useState(false);
-    const [tempCodes, setTempCodes] = useState<{ [key: number]: string }>({});
-    const [solicitudes, setSolicitudes] = useState<VwSolicitudCompra[]>([]);
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [loadingSolicitudes, setLoadingSolicitudes] = useState<boolean>(true);
-    const [loadingCodes, setLoadingCodes] = useState<boolean>(false);
-    const [error, setError] = useState<string | null>(null);
-    const [sapSuccessData, setSapSuccessData] = useState<{docNum: number, requisicion: string} | null>(null);
+  const [searchCodes, setSearchCodes] = useState(false);
+  const [selectedPurchase, setSelectedPurchase] = useState<VwSolicitudCompra | null>(null);
+  const [showTracking, setShowTracking] = useState(false);
+  const [editingCodes, setEditingCodes] = useState(false);
+  const [tempCodes, setTempCodes] = useState<{ [key: string]: string }>({});
+  const [solicitudes, setSolicitudes] = useState<VwSolicitudCompra[]>([]);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loadingSolicitudes, setLoadingSolicitudes] = useState<boolean>(true);
+  const [loadingCodes, setLoadingCodes] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sapSuccessData, setSapSuccessData] = useState<{docNum: number, requisicion: string} | null>(null);
+  const [validatedCodes, setValidatedCodes] = useState<Set<string>>(new Set());
 
-    const fetchSolicitudes = async () => {
-        try {
-            const data = await getSolicitudCompraAF();
-            setSolicitudes(data);
-        } catch (err: any) {
-            if (['TOKEN_EXPIRED', 'TOKEN_INVALID', 'TOKEN_REQUIRED'].includes(err?.message)) {
-                localStorage.clear();
-                setIsAuthenticated(false);
-                return;
-            }
-            setError((err as Error).message);
-        } finally {
-            setLoadingSolicitudes(false);
-        }
+  const fetchSolicitudes = async () => {
+    try {
+      setLoadingSolicitudes(true)
+      const data = await getSolicitudCompraAF();
+      setSolicitudes(data);
+    } catch (err: any) {
+      if (['TOKEN_EXPIRED', 'TOKEN_INVALID', 'TOKEN_REQUIRED'].includes(err?.message)) {
+        localStorage.clear();
+        setIsAuthenticated(false);
+        return;
+      }
+      setError((err as Error).message);
+    } finally {
+      setLoadingSolicitudes(false);
     }
+  }
 
-    const fetchArticulos = async (solicitud: VwSolicitudCompra) => {
-        try {
-            const articulos = await getArticulosBySolicitud(solicitud.id);
-            setSelectedPurchase({
-                ...solicitud,
-                items: articulos
-            });
-        } catch (err) {
-            console.error("Error cargando artículos: ", err);
-            setError("No se pudieron obtener los aretículos de la solicitud");
-        }
+  const fetchArticulos = async (solicitud: VwSolicitudCompra) => {
+    const solicitudId = solicitud.id;
+    try {
+      const articulos = await getArticulosBySolicitud(solicitud.id);
+      if (solicitudId !== solicitud.id) return;
+      setSelectedPurchase({
+        ...solicitud,
+        items: articulos
+      });
+    } catch (err) {
+      console.error("Error cargando artículos: ", err);
+      setError("No se pudieron obtener los aretículos de la solicitud");
     }
+  }
 
-    useEffect(() => {
-        fetchSolicitudes();
-    }, [])
+  useEffect(() => {
+    fetchSolicitudes();
+  }, [])
 
   const handleStartEditingCodes = () => {
-    if (selectedPurchase && selectedPurchase.items) {
-      const codes: { [key: number]: string } = {};
-      selectedPurchase.items.forEach((item, index) => {
-        codes[index] = (item.codigo_articulo === "--") ? "" : (item.codigo_articulo || "");
-      });
-      setTempCodes(codes);
-      setEditingCodes(true);
-      setSearchCodes(false);
-    }
+    if (!selectedPurchase?.items?.length) return;
+
+    const codes: { [key: string]: string } = {};
+
+    selectedPurchase.items.forEach((item) => {
+      codes[item.id] =
+        item.codigo_articulo === "--"
+          ? ""
+          : (item.codigo_articulo || "");
+    });
+
+    setTempCodes(codes);
+    setValidatedCodes(new Set());
+    setEditingCodes(true);
   };
 
   const handleSaveCodes = async () => {
+    if (loadingCodes) return;
     if (!selectedPurchase) return;
 
-    const hasEmptyCodes = selectedPurchase.items.some((_, index) => {
-      return !tempCodes[index]?.trim();
+    const hasEmptyCodes = selectedPurchase.items.some((item) => {
+      return !tempCodes[item.id]?.trim();
     });
 
     if (hasEmptyCodes) {
@@ -99,9 +108,11 @@ export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProp
       return;
     }
 
-    const itemsToUpdate = selectedPurchase.items.map((item, index) => ({
+    const itemsToUpdate = selectedPurchase.items
+    .filter(item => tempCodes[item.id]?.trim())
+    .map(item => ({
       id: item.id,
-      codigo_articulo: tempCodes[index]?.trim(),
+      codigo_articulo: tempCodes[item.id]?.trim(),
       nombre_articulo: item.nombre_articulo,
       originalCode: item.codigo_articulo
     }));
@@ -111,76 +122,133 @@ export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProp
       return;
     }
 
-    if(searchCodes) {
-        try {
-          setLoadingCodes(true);
-          const response = await updateArticulosCodes(itemsToUpdate);
+    const allValidated =
+      validatedCodes.size === selectedPurchase.items.length;
 
-          setSapSuccessData({
-            docNum: response.DocNum,
-            requisicion: selectedPurchase.numero_requisicion
-          })
+    if (!allValidated) {
+      try {
+        setLoadingCodes(true);
 
-          fetchSolicitudes();
-          setEditingCodes(false);
-          setSelectedPurchase(null);
-        } catch (err) {
-            alert("Error al guardar: " + err);
-        } finally {
-            setLoadingCodes(false);
-        }   
-    } else {
-        try {
-            setLoadingCodes(true);
-            const articulos = await verificarArticulosSAP(itemsToUpdate);
+        const articulos = await verificarArticulosSAP(itemsToUpdate);
+        const validatedSet = new Set<string>();
 
-            if(articulos.status === "success" || articulos.status === "incomplete") {
-                const updatedItems = selectedPurchase.items.map((item, index) => {
-                    const sapData = articulos.items.find(
-                        (s: any) => s.codigo_articulo === tempCodes[index].trim()
-                    );
+        const updatedItems = selectedPurchase.items.map((item) => {
+          const sapItems = Array.isArray(articulos.items)
+          ? articulos.items
+          : [];
 
-                    if(sapData) {
-                        return {
-                            ...item,
-                            codigo_articulo: sapData.codigo_articulo,
-                            nombre_articulo: sapData.nombre_articulo,
-                            esValidadoTemporal: true
-                        };
-                    }
+          const sapData = sapItems.find(
+            (s: any) =>
+              s.codigo_articulo === tempCodes[item.id]?.trim()
+          );
 
-                    return item;
-                });
+          if (sapData) {
+            validatedSet.add(item.id);
 
-                setSelectedPurchase({ ...selectedPurchase, items: updatedItems });
-                setSearchCodes(true);
+            return {
+              ...item,
+              codigo_articulo: sapData.codigo_articulo,
+              nombre_articulo: sapData.nombre_articulo,
+              esValidadoTemporal: true
+            };
+          }
 
-                if (articulos.status === "incomplete") {
-                  alert(`Atención: ${articulos.message}`);
-                } else {
-                  alert("Todos los códigos validados con SAP correctamente.");
-                  setSearchCodes(true); 
-                }
-            }
-        } catch (err) {
-            alert("Error al validar: " + err);
-        } finally {
-            setLoadingCodes(false);
+          return {
+            ...item,
+            esValidadoTemporal: false
+          };
+        });
+
+        setValidatedCodes(validatedSet);
+
+        setSelectedPurchase({
+          ...selectedPurchase,
+          items: updatedItems
+        });
+
+        if (articulos.status === "incomplete") {
+
+          alert(`Atención: ${articulos.message}`);
+          return;
         }
+
+        alert("Todos los códigos fueron validados correctamente en SAP.");
+      } catch (err: any) {
+        alert(
+          err?.response?.data?.error ||
+          err?.message ||
+          "Error al validar artículos"
+        );
+      } finally {
+        setLoadingCodes(false);
+      }
+      return;
+    }
+
+    try {
+      setLoadingCodes(true);
+
+      const response = await updateArticulosCodes(itemsToUpdate);
+
+      setSapSuccessData({
+        docNum: response.DocNum,
+        requisicion: selectedPurchase.numero_requisicion
+      });
+
+      await fetchSolicitudes();
+
+      setEditingCodes(false);
+      setValidatedCodes(new Set());
+      setTempCodes({});
+      setSelectedPurchase(null);
+    } catch (err: any) {
+      alert(
+        err?.response?.data?.error ||
+        err?.message ||
+        "Error al guardar"
+      );
+    } finally {
+      setLoadingCodes(false);
     }
   };
 
   const handleCancelEditingCodes = () => {
     setEditingCodes(false);
     setTempCodes({});
+    setValidatedCodes(new Set());
   };
 
-  const handleCodeChange = (index: number, value: string) => {
-    setTempCodes({ ...tempCodes, [index]: value });
+  const handleCodeChange = (itemId: string, value: string) => {
+    setTempCodes((prev) => ({
+      ...prev,
+      [itemId]: value
+    }));
+
+    setValidatedCodes((prev) => {
+      const updated = new Set(prev);
+      updated.delete(itemId);
+      return updated;
+    });
+
+    setSelectedPurchase((prev) => {
+      if (!prev) return prev;
+
+      return {
+        ...prev,
+        items: prev.items.map((item) =>
+          item.id === itemId
+            ? {
+                ...item,
+                esValidadoTemporal: false
+              }
+            : item
+        )
+      };
+    });
   };
 
   return (
-    <div className="py-4 sm:py-6 lg:py-8 px-2 sm:px-4">
+    <div className="py-1 sm:py-2 lg:py-0 px-2 sm:px-4">
       <div className="w-full max-w-5xl mx-auto">
         <div className="mb-2 bg-gradient-to-r from-[#2183AE] to-[#1a6a8f] rounded-2xl shadow-lg p-6 text-white">
           <div className="flex items-center gap-3 mb-2">
@@ -196,6 +264,14 @@ export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProp
           </div>
         </div>
         <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-4 sm:p-6">
+          <Button
+            onClick={() => fetchSolicitudes()}
+            className="mb-2 border border-[#2183AE] bg-[#2183AE] text-white hover:bg-white hover:text-[#2183AE] flex items-center gap-2"
+            size="sm"
+            >
+              <Search className="h-3 w-3" />
+              Buscar
+            </Button>
           <div className="space-y-2">
             {loadingSolicitudes ? (
               <div className="flex flex-col items-center justify-center py-12">
@@ -203,42 +279,57 @@ export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProp
                 <p className="text-gray-500 text-sm">Cargando solicitudes...</p>
               </div>
             ) : solicitudes.length === 0 ? (
-                <Card className="p-12 text-center border-2 border-dashed border-gray-300">
-                    <ShoppingBag className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-600 font-medium">No se encontraron solicitudes aprobadas</p>
-                </Card>
+              <Card className="p-12 text-center border-2 border-dashed border-gray-300">
+                <ShoppingBag className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <p className="text-gray-600 font-medium">No se encontraron solicitudes aprobadas</p>
+              </Card>
             ) : (
-                solicitudes.map((purchase) => {
-                    return (
-                        <div
-                        key={purchase.id}
-                        className="border border-gray-200 rounded-lg p-4 hover:border-[#2183AE] transition-colors cursor-pointer"
-                        onClick={() => {
-                            fetchArticulos(purchase);
-                            setShowTracking(false);
-                            setEditingCodes(false);
-                        }}>
-                            <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-3">
-                                    <span className="text-sm font-bold text-gray-900">{purchase.numero_requisicion}</span>
-                                </div>
-                                <span className="text-xs text-gray-600">
-                                    {format(purchase.fecha_creacion, "dd/MM/yyyy", { locale: es })}
-                                </span>
-                            </div>
-                            <div className="flex items-center justify-between pb-4">
-                                <span className="text-xs text-gray-600">{purchase.solicitado_por}</span>
-                                <div className="flex items-center gap-3 text-sm">
-                                    <span className="text-gray-600">{purchase.cantidad_articulos} Artículos</span>
-                                </div>
-                            </div>
-                            <div className="bg-gray-50 rounded-lg p-2 border">
-                                <p className="text-gray-500 text-sm mb-1">Justificación</p>
-                                <p className="text-gray-700">{purchase.justificacion}</p>
-                            </div>
-                        </div>
-                    )
-                })
+              solicitudes.map((purchase) => {
+                return (
+                  <div
+                  key={purchase.id}
+                  className="border border-gray-200 rounded-lg p-4 hover:border-[#2183AE] transition-colors cursor-pointer"
+                  onClick={() => {
+                    setValidatedCodes(new Set());
+                    setTempCodes({});
+                    setEditingCodes(false);
+                    fetchArticulos(purchase);
+                  }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-bold text-gray-900">{purchase.numero_requisicion}</span>
+                      </div>
+                      <span className="text-xs text-gray-600">
+                        {format(purchase.fecha_creacion, "dd/MM/yyyy", { locale: es })}
+                      </span>
+                    </div>
+                    <div className="flex items-end justify-between pb-4">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-medium text-gray-400 uppercase">
+                          Solicitado Por
+                        </span>
+                        <span className="text-xs text-gray-600">
+                          {purchase.solicitado_por}
+                        </span>
+                        {purchase.empresa && (
+                          <span className="text-[11px] text-[#2183AE] font-semibold mt-0.5">
+                            {purchase.empresa.nombre}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 text-sm">
+                        <span className="text-gray-600">
+                          {purchase.items.length} {purchase.items.length === 1 ? "Artículo" : "Artículos"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-2 border">
+                      <p className="text-gray-500 text-sm mb-1">Justificación</p>
+                      <p className="text-gray-700">{purchase.justificacion}</p>
+                    </div>
+                  </div>
+                )
+              })
             )}
           </div>
         </div>
@@ -251,13 +342,15 @@ export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProp
                 <h3 className="text-gray-900 font-semibold">{selectedPurchase.numero_requisicion}</h3>
               </div>
               <Button
-                onClick={() => {
-                  setSelectedPurchase(null);
-                  setEditingCodes(false);
-                }}
-                variant="ghost"
-                size="sm"
-                className="text-gray-600"
+              onClick={() => {
+                setSelectedPurchase(null);
+                setEditingCodes(false);
+                setValidatedCodes(new Set());
+                setTempCodes({});
+              }}
+              variant="ghost"
+              size="sm"
+              className="text-gray-600"
               >
                 <X className="h-5 w-5" />
               </Button>
@@ -286,9 +379,9 @@ export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProp
                     <h4 className="text-sm font-semibold text-gray-900">Items de Activos Fijos</h4>
                     {!editingCodes && (
                       <Button
-                        onClick={handleStartEditingCodes}
-                        size="sm"
-                        className="bg-[#2183AE] text-white hover:bg-[#1a6a8f]"
+                      onClick={handleStartEditingCodes}
+                      size="sm"
+                      className="border border-[#2183AE] bg-[#2183AE] text-white hover:bg-white hover:text-[#2183AE]"
                       >
                         <Edit3 className="h-3 w-3 mr-1" />
                         Asignar Códigos
@@ -297,8 +390,8 @@ export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProp
                   </div>
                   
                   <div className="space-y-2">
-                    {selectedPurchase.items.map((item, index) => (
-                      <div key={index} className="border border-gray-200 rounded-lg p-3">
+                    {selectedPurchase.items.map((item) => (
+                      <div key={item.id} className="border border-gray-200 rounded-lg p-3">
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex-1">
                             <p className="text-sm font-medium text-gray-900">{item.nombre_articulo}</p>
@@ -309,25 +402,21 @@ export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProp
                           <div className="mt-2">
                             <div className="flex justify-between items-center mb-1">
                               <Label className="text-xs text-gray-700">Código de Artículo *</Label>
-                              {selectedPurchase.items[index].esValidadoTemporal && (
+                              {item.esValidadoTemporal && (
                                 <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full animate-pulse font-medium border border-blue-200">
                                   Pendiente de guardar
                                 </span>
                               )}
                             </div>
                             <Input
-                            value={tempCodes[index] || ""}
+                            value={tempCodes[item.id] || ""}
                             onChange={(e) => {
-                              handleCodeChange(index, e.target.value);
-                              const newItems = [...selectedPurchase.items];
-                              newItems[index].esValidadoTemporal = false;
-                              setSelectedPurchase({...selectedPurchase, items: newItems});
-                              setSearchCodes(false);
+                              handleCodeChange(item.id, e.target.value);
                             }}
                             placeholder="Ej: AF-2026-001"
                             className={`mt-1 h-8 text-sm transition-all ${
-                              (selectedPurchase.items[index].codigo_articulo !== "--" && 
-                              !selectedPurchase.items[index].esValidadoTemporal) 
+                              (item.codigo_articulo !== "--" &&
+                              !item.esValidadoTemporal)
                               ? "bg-gray-100 border-gray-200" 
                               : "border-blue-300 ring-1 ring-blue-100"
                             }`}
@@ -367,7 +456,7 @@ export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProp
                     <div className="flex gap-2 mt-4">
                       <Button
                         onClick={handleSaveCodes}
-                        className="flex-1 bg-[#2183AE] text-white hover:bg-[#1a6a8f]"
+                        className="flex-1 border border-[#2183AE] bg-[#2183AE] text-white hover:bg-white hover:text-[#2183AE]"
                         size="sm"
                         disabled={loadingCodes}
                       >
@@ -375,8 +464,16 @@ export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProp
                           "Procesando..."
                         ) : (
                           <>
-                            {searchCodes ? <CheckCircle className="h-3 w-3 mr-1" /> : <Save className="h-3 w-3 mr-1" />}
-                            {searchCodes ? "Confirmar y Guardar" : "Validar código en SAP"}
+                            {
+                              validatedCodes.size === selectedPurchase.items.length
+                                ? <CheckCircle className="h-3 w-3 mr-1" />
+                                : <Save className="h-3 w-3 mr-1" />
+                            }
+                            {
+                              validatedCodes.size === selectedPurchase.items.length
+                                ? "Confirmar y Guardar"
+                                : "Validar códigos en SAP"
+                            }
                           </>
                         )}
                       </Button>
@@ -384,6 +481,7 @@ export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProp
                         onClick={handleCancelEditingCodes}
                         variant="outline"
                         size="sm"
+                        className="border border-gray-900 bg-gray-900 text-white hover:bg-white hover:text-gray-900"
                       >
                         Cancelar
                       </Button>
@@ -393,21 +491,6 @@ export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProp
               <div className="bg-gray-50 rounded-lg p-3">
                 <p className="text-xs text-gray-600 mb-1">Justificación</p>
                 <p className="text-sm text-gray-900">{selectedPurchase.justificacion}</p>
-              </div>
-
-              {/* Tracking colapsable */}
-              <div className="border-t pt-4">
-                <button
-                  onClick={() => setShowTracking(!showTracking)}
-                  className="w-full flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                >
-                  <span className="text-sm font-semibold text-gray-900">Seguimiento</span>
-                  {showTracking ? (
-                    <ChevronUp className="h-4 w-4 text-gray-600" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 text-gray-600" />
-                  )}
-                </button>
               </div>
             </div>
           </div>

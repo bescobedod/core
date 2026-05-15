@@ -178,7 +178,7 @@ export function PurchaseRequestView({ onBack }: PurchaseRequestProps) {
 
             const payload = {
                 header: {
-                    empresa: selectedEmpresa,
+                    id_empresa: selectedEmpresa.id,
                     justificacion: justification,
                     fecha_requerida: orderDate ? format(orderDate, "yyyy-MM-dd") : null,
                     estrategia_adquisicion_id: null,
@@ -187,7 +187,7 @@ export function PurchaseRequestView({ onBack }: PurchaseRequestProps) {
                 items: selectedArticles.map((item) => ({
                     codigo_articulo: item.article.ItemCode,
                     nombre_articulo: item.article.ItemName,
-                    unidad_medida: item.article.SalesUnit,
+                    unidad_medida: item.article.SalesUnit || "Unidad",
                     descripcion: item.article.ItemName,
                     cantidad: item.quantity,
                     notas: item.comment
@@ -526,7 +526,7 @@ export function PurchaseRequestView({ onBack }: PurchaseRequestProps) {
                                                 disabled={selectedArticles.some(a => a.article.ItemCode === item.ItemCode)}
                                                 size="sm"
                                                 variant="outline"
-                                                className="border-[#2183AE] text-[#2183AE] hover:bg-blue-50"
+                                                className="border-[#2183AE] text-[#2183AE] hover:bg-[#2183AE] hover:text-white"
                                             >
                                                 <Plus className="h-4 w-4 mr-1" /> Seleccionar
                                             </Button>

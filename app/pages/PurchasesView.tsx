@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from "motion/react";
 import { useState, useEffect } from 'react';
-import { MessageSquare, Clock, CheckCircle, XCircle, FileText, Calendar, User, Package, AlertCircle, Eye, Filter, X as XIcon, Check } from 'lucide-react';
+import { MessageSquare, Clock, CheckCircle, XCircle, FileText, Calendar, User, Package, AlertCircle, Eye, Filter, X as XIcon, Check, Loader2, X, SearchX, Building2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Textarea } from '../ui/textarea';
 import { Input } from '../ui/input';
@@ -33,7 +33,7 @@ export function PurchasesView({ onBack } : PurchasesProps ) {
   const [singleDate, setSingleDate] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [loadingAprobaciones, setLoadingAprobaciones] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,17 +44,18 @@ export function PurchasesView({ onBack } : PurchasesProps ) {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
-  const [permiso, setPermiso] = useState(false);
+  const [permiso, setPermiso] = useState(true);
 
   const fetchSolicitudes = async (filters?: any) => {
     try {
+      setLoading(true)
       const requestSolicitudes = permiso ? getSolicitudesCompra : getSolicitudesCompraByUser;
       const response = await requestSolicitudes(
         filters?.inicio,
         filters?.fin,
         filters?.estado,
         filters?.page || page,
-        20
+        10
       );
       
       setSolicitudes(response.data);
@@ -117,6 +118,7 @@ export function PurchasesView({ onBack } : PurchasesProps ) {
 
   const handleOpenDetailDialog = (solicitud: VwSolicitudCompra) => {
     setSelectedSolicitud(solicitud);
+    console.log(selectedSolicitud)
     fetchAprobaciones(solicitud.id)
     setShowDetailDialog(true);
   };
@@ -183,11 +185,11 @@ const reviewedRequests = filteredRequests.filter(req =>
             Aprobada
           </span>
         );
-      case "AUTO_APROBADO":
+      case "RECHAZADO":
         return (
-          <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 flex items-center gap-1">
-            <CheckCircle className="h-3 w-3" />
-            Auto Aprobada
+          <span className="px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 flex items-center gap-1">
+            <X className="h-3 w-3" />
+            Rechazado
           </span>
         );
         case "APROBADO_COMPRAS":
@@ -228,50 +230,64 @@ const reviewedRequests = filteredRequests.filter(req =>
           </div>
         </div>
         {!permiso && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-          <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl shadow-md border border-gray-200 p-4"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-gray-700 mb-1 font-medium">En Proceso</p>
-                <p className="text-3xl font-bold text-gray-600">
-                  {solicitudes?.filter(r => r.estado === "PENDIENTE").length}
-                </p>
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
+            <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl shadow-md border border-gray-200 p-4"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-700 mb-1 font-medium">Total</p>
+                  <p className="text-3xl font-bold text-gray-600">
+                    {solicitudes?.length}
+                  </p>
+                </div>
+                <div className="w-14 h-14 bg-gray-200 rounded-xl flex items-center justify-center shadow-inner">
+                  <AlertCircle className="h-7 w-7 text-gray-700" />
+                </div>
               </div>
-              <div className="w-14 h-14 bg-gray-200 rounded-xl flex items-center justify-center shadow-inner">
-                <AlertCircle className="h-7 w-7 text-gray-700" />
+            </div>
+            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl shadow-md border border-blue-200 p-4"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-blue-700 mb-1 font-medium">Pendientes</p>
+                  <p className="text-3xl font-bold text-blue-600">
+                    {solicitudes?.filter(r => r.estado === "PENDIENTE").length}
+                  </p>
+                </div>
+                <div className="w-14 h-14 bg-blue-200 rounded-xl flex items-center justify-center shadow-inner">
+                  <CheckCircle className="h-7 w-7 text-blue-700" />
+                </div>
+              </div>
+            </div>
+            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-md border border-green-200 p-4"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-green-700 mb-1 font-medium">Aprobadas</p>
+                  <p className="text-3xl font-bold text-green-600">
+                    {solicitudes?.filter(r => ["APROBADO", "AUTO_APROBADO", "APROBADO_COMPRAS"].includes(r.estado)).length}
+                  </p>
+                </div>
+                <div className="w-14 h-14 bg-green-200 rounded-xl flex items-center justify-center shadow-inner">
+                  <CheckCircle className="h-7 w-7 text-green-700" />
+                </div>
+              </div>
+            </div>
+            <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl shadow-md border border-red-200 p-4"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-red-700 mb-1 font-medium">Rechazadas</p>
+                  <p className="text-3xl font-bold text-red-600">
+                    {solicitudes?.filter(r => r.estado === "RECHAZADO").length}
+                  </p>
+                </div>
+                <div className="w-14 h-14 bg-red-200 rounded-xl flex items-center justify-center shadow-inner">
+                  <XCircle className="h-7 w-7 text-red-700" />
+                </div>
               </div>
             </div>
           </div>
-          <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl shadow-md border border-green-200 p-4"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-green-700 mb-1 font-medium">Aprobadas</p>
-                <p className="text-3xl font-bold text-green-600">
-                  {solicitudes?.filter(r => ["APROBADO", "AUTO_APROBADO", "APROBADO_COMPRAS"].includes(r.estado)).length}
-                </p>
-              </div>
-              <div className="w-14 h-14 bg-green-200 rounded-xl flex items-center justify-center shadow-inner">
-                <CheckCircle className="h-7 w-7 text-green-700" />
-              </div>
-            </div>
-          </div>
-          <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-xl shadow-md border border-red-200 p-4"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-red-700 mb-1 font-medium">Rechazadas</p>
-                <p className="text-3xl font-bold text-red-600">
-                  {solicitudes?.filter(r => r.estado === "RECHAZADO").length}
-                </p>
-              </div>
-              <div className="w-14 h-14 bg-red-200 rounded-xl flex items-center justify-center shadow-inner">
-                <XCircle className="h-7 w-7 text-red-700" />
-              </div>
-            </div>
-          </div>
-        </div>
         )}
         <div className="bg-white rounded-xl shadow-md border border-gray-200 p-4 mb-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
@@ -355,6 +371,10 @@ const reviewedRequests = filteredRequests.filter(req =>
             onClick={() => handleSearch()}
             className="border border-[#2183AE] bg-[#2183AE] text-white hover:bg-white hover:text-[#2183AE] flex items-center gap-2"
             size="sm"
+            disabled={
+              dateFilterType === "range" && (!startDate || !endDate)
+              || dateFilterType === "single" && !singleDate
+            }
             >
               <Filter className="h-3 w-3" />
               Buscar
@@ -401,7 +421,18 @@ const reviewedRequests = filteredRequests.filter(req =>
             </p>
           </div>
         )}
-        {!hasSearched && (
+        {loading && (
+          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 text-center mb-8">
+            <div className="w-16 h-16 bg-[#2183AE]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Loader2 className="h-8 w-8 text-[#2183AE] animate-spin" />
+            </div>
+            <h3 className="text-gray-900 mb-2">Buscando Solicitudes</h3>
+            <p className="text-gray-600 text-sm">
+              Espera un Momento
+            </p>
+          </div>
+        )}
+        {!hasSearched && !loading && (
           <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 text-center mb-8">
             <div className="w-16 h-16 bg-[#2183AE]/10 rounded-full flex items-center justify-center mx-auto mb-4">
               <Filter className="h-8 w-8 text-[#2183AE]" />
@@ -412,7 +443,7 @@ const reviewedRequests = filteredRequests.filter(req =>
             </p>
           </div>
         )}
-        {hasSearched && pendingRequests.length > 0 && (
+        {hasSearched && pendingRequests.length > 0 && !loading && (
           <div className="mb-8">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-1 h-6 bg-yellow-500 rounded-full"></div>
@@ -440,6 +471,11 @@ const reviewedRequests = filteredRequests.filter(req =>
                         <User className="h-3 w-3" />
                         <span>{request.solicitado_por}</span>
                       </div>
+                      
+                      <div className="flex items-center gap-1 mb-1">
+                        <Building2 className="h-3 w-3" />
+                        <span>{request.empresa?.nombre}</span>
+                      </div>
                       <div className="flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
                         <span>{format(request.fecha_creacion, "dd/MM/yyyy HH:mm", { locale: es })}</span>
@@ -456,7 +492,7 @@ const reviewedRequests = filteredRequests.filter(req =>
                         onClick={() => handleOpenDetailDialog(request)}
                         variant="outline"
                         size="sm"
-                        className="flex-1 border-[#2183AE] text-[#2183AE] hover:bg-[#2183AE]/10"
+                        className="flex-1 border-[#2183AE] bg-[#2183AE] text-white hover:bg-white hover:text-[#2183AE]"
                       >
                         <Eye className="h-3 w-3 mr-1" />
                         Ver Detalle
@@ -468,10 +504,10 @@ const reviewedRequests = filteredRequests.filter(req =>
             </div>
           </div>
         )}
-        {hasSearched && pendingRequests.length === 0 && reviewedRequests.length === 0 && (
+        {hasSearched && pendingRequests.length === 0 && reviewedRequests.length === 0 && !loading && (
           <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 text-center mb-8">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle className="h-8 w-8 text-gray-400" />
+              <SearchX className="h-8 w-8 text-gray-400" />
             </div>
             <h3 className="text-gray-900 mb-2">No se encontraron solicitudes</h3>
             <p className="text-gray-600 text-sm">
@@ -479,7 +515,7 @@ const reviewedRequests = filteredRequests.filter(req =>
             </p>
           </div>
         )}
-        {hasSearched && reviewedRequests.length > 0 && (
+        {hasSearched && reviewedRequests.length > 0 && !loading && (
           <div>
             <div className="flex items-center gap-2 mb-4">
               <div className="w-1 h-6 bg-gray-500 rounded-full"></div>
@@ -507,6 +543,10 @@ const reviewedRequests = filteredRequests.filter(req =>
                         <User className="h-3 w-3" />
                         <span>{request.solicitado_por}</span>
                       </div>
+                      <div className="flex items-center gap-1 mb-1">
+                        <Building2 className="h-3 w-3" />
+                        <span>{request.empresa?.nombre}</span>
+                      </div>
                       <div className="flex items-center gap-1">
                         <Calendar className="h-3 w-3" />
                         <span>{format(request.fecha_creacion, "dd/MM/yyyy", { locale: es })}</span>
@@ -516,7 +556,7 @@ const reviewedRequests = filteredRequests.filter(req =>
                   <div className="p-4">
                     <div className="mb-4">
                       <p className="text-xs text-gray-600 mb-1">Total de Artículos</p>
-                      <p className="text-2xl font-bold text-gray-900">{request.cantidad_articulos}</p>
+                      <p className="text-2xl font-bold text-gray-900">{request.items?.length ?? 0}</p>
                     </div>
                     <Button
                       onClick={() => handleOpenDetailDialog(request)}
@@ -574,6 +614,10 @@ const reviewedRequests = filteredRequests.filter(req =>
                         <div className="flex items-center gap-2 text-sm">
                             <User className="h-4 w-4" />
                             <span>Solicitado por: <strong>{selectedSolicitud.solicitado_por}</strong></span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                            <Building2 className="h-4 w-4" />
+                            <span>Empresa: <strong>{selectedSolicitud.empresa?.nombre}</strong></span>
                         </div>
                         <div className="flex items-center gap-2 text-sm">
                             <Calendar className="h-4 w-4" />
