@@ -6,11 +6,13 @@ import { ParticleBackground } from "./ParticleBackground";
 import { login } from "../api/LoginApi";
 import Image from "next/image";
 import logo from "@/assets/img/Alisa-Sin-Fondo.png";
+import "./LoginView.css";
 
 interface LoginViewProps {
   onMicrosoftLogin: () => void;
   onAuthenticated: () => void;
   onRegister?: () => void;
+  errorMessage?: string | null;
 }
 
 const MicrosoftLogo = (props: React.SVGProps<SVGSVGElement>) => (
@@ -22,7 +24,7 @@ const MicrosoftLogo = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-export function LoginView({ onMicrosoftLogin, onRegister, onAuthenticated }: LoginViewProps) {
+export function LoginView({ onMicrosoftLogin, onRegister, onAuthenticated, errorMessage }: LoginViewProps) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -101,11 +103,6 @@ export function LoginView({ onMicrosoftLogin, onRegister, onAuthenticated }: Log
               disabled={isLoading}
             />
           </div>
-          {error && (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">
-              {error}
-            </div>
-          )}
           <Button
             type="button"
             onClick={onMicrosoftLogin}
@@ -122,6 +119,13 @@ export function LoginView({ onMicrosoftLogin, onRegister, onAuthenticated }: Log
           >
             {isLoading ? "Ingresando..." : "Iniciar Sesión"}
           </Button>
+          {(error || errorMessage) && (
+            <div className="error-container mt-4">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center text-sm text-red-600">
+                {error || errorMessage}
+              </div>
+            </div>
+          )}
           {/* <div className="pt-4 mt-4 border-t border-gray-200">
             <Button
             type="button"

@@ -133,8 +133,6 @@ export async function getSolicitudesCompraByUser(
         }
     });
 
-    console.log(response)
-
     if (!response.ok) {
         const text = await response.text().catch(() => '');
         let details: any;
@@ -202,14 +200,14 @@ export async function getSolicitudesCompra(
         } catch {}
 
         console.error(
-            'Error al obtener las solicitudes de compra para el usuario: ',
+            'Error al obtener las solicitudes de compra: ',
             details || text
         );
 
         alert(
             details?.error ||
             details?.message ||
-            'Error al obtener las solicitudes de compra para el usuario'
+            'Error al obtener las solicitudes de compra'
         );
 
         return {
@@ -247,6 +245,39 @@ export async function getAprobacionSolicitud(id_solicitud: string) : Promise<VwA
 
         console.error('Error al obtener las aprobaciones para la solicitud de compra: ', details || text);
         alert(details?.error | details?.message || 'Error al obtener las aprobaciones de la solicitud de compra');
+    }
+
+    return response.json();
+}
+
+export async function getSolicitudCompra(id_solicitud: string): Promise<SolicitudCompraModel> {
+    const response = await authFetch(`/solicitud/getSolicitudCompra/${id_solicitud}`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    });
+
+    if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        let details: any;
+
+        try {
+            details = JSON.parse(text);
+        } catch {}
+
+        console.error(
+            'Error al obtener la solicitud de compra: ',
+            details || text
+        );
+
+        alert(
+            details?.error ||
+            details?.message ||
+            'Error al obtener la solicitud de compra'
+        );
+
+        return response.json();
     }
 
     return response.json();

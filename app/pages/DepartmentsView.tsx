@@ -1,6 +1,6 @@
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { useEffect, useState, useRef } from 'react';
-import { Plus, Edit2, Trash2, Save, X, Building2, Users, Grid3x3, User, Loader2, UserCog, Check, UserMinus } from 'lucide-react';
+import { Plus, Edit2, Trash2, Save, X, Building2, Users, Grid3x3, User, Loader2, UserCog, Check, UserMinus, AlertCircle, CheckCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -62,7 +62,17 @@ export function DepartmentsView({ onBack } : DepartmentsProps ) {
     const [usuariosNuevos, setUsuariosNuevos] = useState<UserTemporalModel[]>([]);
     const [jefesAEliminar, setJefesAEliminar] = useState<string[]>([]);
     const [jefesActualizados, setJefesActualizados] = useState<Record<string, string | null>>({});
+    const [messageModal, setMessageModal] = useState<{ title: string; message: string; type: 'success' | 'error' } | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
+
+    const showMessageModal = (message: string, type: 'success' | 'error' = 'error', title?: string) => {
+        setMessageModal({
+            title: title ?? (type === 'success' ? '¡Listo!' : 'Atención'),
+            message,
+            type,
+        });
+    };
+
     const [loadingSearch, setLoadingSearch] = useState(false);
     const debounceRef = useRef<NodeJS.Timeout | null>(null);
     const nameRef = useRef<HTMLInputElement>(null);
@@ -198,8 +208,8 @@ export function DepartmentsView({ onBack } : DepartmentsProps ) {
                 );
 
                 setUsersSearched(results);
-            } catch (err) {
-                alert(err);
+            } catch (err: any) {
+                showMessageModal(err?.message ?? String(err));
             } finally {
                 setLoadingSearch(false);
             }
@@ -232,7 +242,7 @@ export function DepartmentsView({ onBack } : DepartmentsProps ) {
         const tieneEmpleados = areasUsuarios.Usuarios.some(u => u.id_area === areaId);
 
         if(tieneEmpleados) {
-            alert(`No se puede inactivar el área ${nombreArea} porque tiene empleados asignados`);
+            showMessageModal(`No se puede inactivar el área ${nombreArea} porque tiene empleados asignados`);
             return;
         }
 
@@ -241,7 +251,7 @@ export function DepartmentsView({ onBack } : DepartmentsProps ) {
 
     const handleAddUser = () => {
     if (!newUser.id_users || !newUser.areaId) {
-        alert("Selecciona un usuario y un área");
+        showMessageModal("Selecciona un usuario y un área");
         return;
     }
 
@@ -254,7 +264,7 @@ export function DepartmentsView({ onBack } : DepartmentsProps ) {
     );
 
     if (existeEnBD || existeTemporal) {
-        alert("El usuario ya está asignado al departamento");
+        showMessageModal("El usuario ya está asignado al departamento");
         return;
     }
 
@@ -306,6 +316,40 @@ export function DepartmentsView({ onBack } : DepartmentsProps ) {
 
     return (
         <div className="py-2 sm:py-6 lg:py-1 px-2 sm:px-4">
+            <AnimatePresence>
+              {messageModal && (
+                <motion.div
+                  className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <motion.div
+                    initial={{ scale: 0.95, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.95, opacity: 0 }}
+                    transition={{ duration: 0.25, ease: "easeOut" }}
+                    className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 text-center border border-gray-100"
+                  >
+                    <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${messageModal.type === 'success' ? 'bg-green-100' : 'bg-red-100'}`}>
+                      {messageModal.type === 'success' ? (
+                        <CheckCircle className="h-12 w-12 text-green-600" />
+                      ) : (
+                        <AlertCircle className="h-12 w-12 text-red-600" />
+                      )}
+                    </div>
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">{messageModal.title}</h3>
+                    <p className="text-gray-600 mb-6">{messageModal.message}</p>
+                    <Button
+                      onClick={() => setMessageModal(null)}
+                      className="w-full bg-[#2183AE] text-white hover:bg-[#1a6a8f] py-4 rounded-xl font-semibold"
+                    >
+                      Entendido
+                    </Button>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
             <div className="w-full max-w-7xl mx-auto">
                 <div className="mb-6 bg-gradient-to-r from-[#2183AE] to-[#1a6a8f] rounded-2xl shadow-lg p-6 text-white">
                     <div className="flex items-center gap-3 mb-2">

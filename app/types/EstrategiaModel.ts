@@ -13,5 +13,5 @@ export interface EstrategiaModel {
 
 export interface Matrices {
     matrices_solicitud: MatrizAprobacionSolicitudModel | null;
-    matrices_orden: MatrizAprobacionOrdenModel[];
+    matrices_orden: MatrizAprobacionOrdenModel[] | null;
 }

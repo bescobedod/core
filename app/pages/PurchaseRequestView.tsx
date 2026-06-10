@@ -271,8 +271,8 @@ export function PurchaseRequestView({ onBack }: PurchaseRequestProps) {
             return;
         }
 
-        if (file.size > 5 * 1024 * 1024) {
-            alert('La imagen no debe superar los 5MB');
+        if (file.size > 15 * 1024 * 1024) {
+            alert('La imagen no debe superar los 15MB');
             return;
         }
 

@@ -17,6 +17,7 @@ import { AcquisitionStrategiesView } from "./pages/AcquisitionStrategiesView";
 import { DepartmentsView } from "./pages/DepartmentsView";
 import { ExternalPersonnelView } from "./pages/ExternalPersonnelView";
 import { UserModel } from "./types/UserModel";
+import { OrderListView } from "./pages/OrderListView";
 
 type View =
   "login"
@@ -28,7 +29,8 @@ type View =
   | "solicitudes"
   | "estrategias"
   | "departamentos"
-  | "personal";
+  | "personal"
+  | "ordenes-compra";
 
 export default function App() {
 
@@ -39,8 +41,22 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { instance, accounts } = useMsal();
   const [userData, setUserData] = useState<{nombre: string | null}>({nombre: null});
+  const [userPhotoUrl, setUserPhotoUrl] = useState<string | null>(null);
   const [isValidated, setIsValidated] = useState<boolean | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [msLoginAttempted, setMsLoginAttempted] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<UserModel | null>(null);
+
+  const getMsErrorMessage = (errorMessage?: string | null) => {
+    if (!errorMessage) return "Error en el inicio de sesión con Microsoft";
+
+    const normalized = errorMessage.toLowerCase();
+    if (/token|permiso|autorizado|unauthorized|denied|invalid|expired/.test(normalized)) {
+      return "No autorizado por Microsoft";
+    }
+
+    return "Error en el inicio de sesión con Microsoft";
+  };
 
   const currentView = viewHistory[viewHistory.length - 1];
 
@@ -48,6 +64,14 @@ export default function App() {
     setIsClient(true);
     const method = localStorage.getItem("login_method");
     setLoginMethod(method);
+    try {
+      const cachedError = localStorage.getItem("ms_login_error");
+      if (cachedError) {
+        setLoginError(cachedError);
+      }
+    } catch {
+      // ignore localStorage errors
+    }
   }, []);
 
   useEffect(() => {
@@ -55,6 +79,7 @@ export default function App() {
 
     if (accounts.length > 0) {
       const email = accounts[0].username;
+      const attemptedMsLogin = msLoginAttempted || localStorage.getItem("ms_login_attempted") === "1";
 
       validateLogin(email)
         .then((data) => {
@@ -62,15 +87,34 @@ export default function App() {
             setUserData({ nombre: data.user.nombre });
             setIsValidated(true);
             setLoginMethod("microsoft");
+            setMsLoginAttempted(false);
+            try {
+              localStorage.removeItem("ms_login_attempted");
+            } catch {}
+            setLoginError(null);
           } else {
-            setIsValidated(false);
+            localStorage.clear();
+            setLoginMethod(null);
+            if (attemptedMsLogin) {
+              const message = getMsErrorMessage(data.error ?? null);
+              setLoginError(message);
+              try { localStorage.setItem("ms_login_error", message); } catch {}
+            }
+            setIsValidated(null);
           }
         })
-        .catch(() => {
-          setIsValidated(false);
+        .catch((err: any) => {
+          localStorage.clear();
+          setLoginMethod(null);
+          if (attemptedMsLogin) {
+            const message = getMsErrorMessage(err?.message ?? null);
+            setLoginError(message);
+            try { localStorage.setItem("ms_login_error", message); } catch {}
+          }
+          setIsValidated(null);
         });
     }
-  }, [accounts, isClient]);
+  }, [accounts, isClient, msLoginAttempted]);
 
   useEffect(() => {
     if (!isClient) return;
@@ -87,28 +131,6 @@ export default function App() {
     }
   }, [loginMethod, isClient]);
 
-  useEffect(() => {
-    if (!isClient) return;
-
-    if (loginMethod === "microsoft") {
-      if (accounts.length > 0) {
-        const email = accounts[0].username;
-
-        validateLogin(email)
-        .then((data) => {
-          if (data.ok) {
-            setUserData({ nombre: data.user.nombre });
-            setIsValidated(true);
-          } else {
-            setIsValidated(false);
-          }
-        })
-        .catch(() => setIsValidated(false));
-      } else {
-        setIsValidated(false);
-      }
-    }
-  }, [accounts, loginMethod, isClient]);
 
   const saveCleanSession = (account: any) => {
     const userPayload = {
@@ -123,11 +145,52 @@ export default function App() {
     setLoginMethod("microsoft");
   };
 
+  // The MS login session should only be persisted after a successful validation.
+  // This avoids bouncing into a Microsoft session state while the validation is still pending.
+
   useEffect(() => {
-    if (accounts.length > 0) {
-      saveCleanSession(accounts[0]);
-    }
-  }, [accounts]);
+    let objectUrl: string | null = null;
+
+    const loadProfilePhoto = async () => {
+      if (accounts.length === 0 || loginMethod !== "microsoft") {
+        setUserPhotoUrl(null);
+        return;
+      }
+
+      try {
+        const response = await instance.acquireTokenSilent({
+          scopes: loginRequest.scopes,
+          account: accounts[0],
+        });
+
+        const graphResponse = await fetch("https://graph.microsoft.com/v1.0/me/photo/$value", {
+          headers: {
+            Authorization: `Bearer ${response.accessToken}`,
+          },
+        });
+
+        if (!graphResponse.ok) {
+          setUserPhotoUrl(null);
+          return;
+        }
+
+        const blob = await graphResponse.blob();
+        objectUrl = URL.createObjectURL(blob);
+        setUserPhotoUrl(objectUrl);
+      } catch (error) {
+        console.error("Error cargando la foto de perfil de Microsoft Graph:", error);
+        setUserPhotoUrl(null);
+      }
+    };
+
+    loadProfilePhoto();
+
+    return () => {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [accounts, loginMethod, instance]);
 
   const navigateTo = (newView: View) => {
     setViewHistory([...viewHistory, newView]);
@@ -146,7 +209,7 @@ export default function App() {
       localStorage.clear();
       instance.logoutRedirect({
         account: accounts[0],
-        postLogoutRedirectUri: "http://localhost:3000"
+        postLogoutRedirectUri: "http://localhost:3001"
       });
     } else {
       localStorage.clear();
@@ -163,11 +226,19 @@ export default function App() {
   if (!loginMethod) {
     return (
       <LoginView
-        onMicrosoftLogin={() => instance.loginRedirect(loginRequest)}
+        onMicrosoftLogin={() => {
+          setMsLoginAttempted(true);
+          try {
+            localStorage.setItem("ms_login_attempted", "1");
+          } catch {}
+          setLoginError(null);
+          instance.loginRedirect(loginRequest);
+        }}
         onAuthenticated={() => {
           const method = localStorage.getItem("login_method");
           setLoginMethod(method);
         }}
+        errorMessage={loginError}
       />
     );
   }
@@ -192,6 +263,7 @@ export default function App() {
         onMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         isMobileMenuOpen={isMobileMenuOpen}
         userName={userData.nombre}
+        userPhotoUrl={userPhotoUrl}
       />
       <div className="flex pt-[80px]">
         <div className="flex-1 px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 lg:mr-64">
@@ -214,6 +286,7 @@ export default function App() {
             {currentView === "estrategias" && <AcquisitionStrategiesView onBack={goBack} />}
             {currentView === "departamentos" && <DepartmentsView onBack={goBack} />}
             {currentView === "personal" && <ExternalPersonnelView onBack={goBack}  />}
+            {currentView === "ordenes-compra" && <OrderListView onBack={goBack}  />}
           </div>
         </div>
         <div className="hidden lg:block w-64 bg-white shadow-2xl border-l border-gray-200 flex-shrink-0 fixed top-[100px] right-0 bottom-0 h-[calc(100vh-80px)]">

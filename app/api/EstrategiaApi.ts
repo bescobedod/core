@@ -131,7 +131,30 @@ export async function createMatrizAprobacionSolicitud(payload: {id_estrategia: s
         try { details = JSON.parse(text); } catch {}
 
         console.error('Error al crear matriz de aprobación: ', details || text);
-        alert(details?.error | details?.message || 'Error al crear matriz de aprobación');
+        alert(details?.error || details?.message || 'Error al crear matriz de aprobación');
+    }
+
+    return response.json();
+}
+
+export async function createMatrizAprobacionOrden(
+    payload: {id_estrategia: string, nombre: string, monto_minimo: string, monto_maximo: string, moneda: string}
+){
+    const response = await authFetch('/estrategia/createMatrizAprobacionOrden', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    })
+
+    if(!response.ok) {
+        const text = await response.text().catch(() => '');
+        let details: any;
+        try { details = JSON.parse(text); } catch {}
+
+        console.error('Error al crear matriz de aprobación: ', details || text);
+        alert(details?.error || details?.message || 'Error al crear matriz de aprobación');
     }
 
     return response.json();
