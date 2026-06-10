@@ -15,8 +15,14 @@ export interface MatrizAprobacionSolicitudModel {
 export interface MatrizAprobacionOrdenModel {
     id: string;
     estrategia_adquisicion_id: string;
+    monto_minimo: string;
+    monto_maximo: string;
+    moneda: string;
     prioridad: number;
     esta_activo: boolean;
-
+    fecha_creacion: Date;
+    fecha_actualizacion: Date;
+    departamento_id: string;
+    nombre: string;
     niveles: VwNivelMatrizAprovacionSolicitudCompra[];
 }

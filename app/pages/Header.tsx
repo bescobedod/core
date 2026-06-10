@@ -1,3 +1,5 @@
+"use client";
+
 // import logo from "@/assets/img/LOGOPINULITOORIGINAL.png";
 import { Menu, User } from "lucide-react";
 import Image from "next/image";
@@ -12,10 +14,12 @@ type View =
   | "solicitudes"
   | "estrategias"
   | "departamentos"
-  | "personal";
+  | "personal"
+  | "ordenes-compra";
 
 interface HeaderProps {
   userName: string | null;
+  userPhotoUrl?: string | null;
   onViewChange: (view: View) => void;
   onLogout: () => void;
   onMenuToggle: () => void;
@@ -25,12 +29,12 @@ interface HeaderProps {
 const date = new Date().toLocaleDateString("es-ES");
 
 export function Header({
-//   currentView,
+  userName,
+  userPhotoUrl,
   onViewChange,
   onLogout,
   onMenuToggle,
   isMobileMenuOpen,
-  // user,
 }: HeaderProps) {
 
   const navigateTo = (view: View) => {
@@ -64,26 +68,42 @@ export function Header({
             </div>
           </button>
           <div className="hidden md:flex items-center gap-3 px-4 py-2 bg-white/20 backdrop-blur-sm rounded-xl border border-blue-600/30 cursor-pointer">
-            <div className="w-9 h-9 bg-white rounded-full flex items-center justify-center">
-              <User size={18} className="text-[#2183AE]" />
+            <div className="w-9 h-9 bg-white rounded-full overflow-hidden flex items-center justify-center">
+              {userPhotoUrl ? (
+                <img
+                  src={userPhotoUrl}
+                  alt="Foto de perfil"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <User size={18} className="text-[#2183AE]" />
+              )}
             </div>
             <div className="text-right leading-tight">
               <p className="text-white text-sm font-semibold">
-                {localStorage.getItem("nombre")}
+                {userName || localStorage.getItem("nombre")}
               </p>
               <p className="text-white text-xs">{localStorage.getItem("puesto")}</p>
               <p className="text-white text-xs">{date}</p>
             </div>
           </div>
           <div className="md:hidden flex items-center gap-2 px-3 py-2 bg-white/20 backdrop-blur-sm rounded-lg border border-blue-600/30">
-            <div className="w-7 h-7 bg-gray-900 rounded-full flex items-center justify-center">
-              <User size={14} className="text-white" />
+            <div className="w-7 h-7 rounded-full overflow-hidden bg-gray-900 flex items-center justify-center">
+              {userPhotoUrl ? (
+                <img
+                  src={userPhotoUrl}
+                  alt="Foto de perfil"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <User size={14} className="text-white" />
+              )}
             </div>
             <div className="text-right leading-tight">
               <p className="text-gray-900 text-xs font-semibold">
-                {}
+                {userName || localStorage.getItem("nombre")}
               </p>
-              <p className="text-gray-800 text-[10px]">{}</p>
+              <p className="text-gray-800 text-[10px]">{localStorage.getItem("puesto")}</p>
             </div>
           </div>
           <button
