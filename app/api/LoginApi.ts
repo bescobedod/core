@@ -18,6 +18,11 @@ export async function validateLogin(email: string) {
     localStorage.setItem("nombre", data.user.first_name + ' ' + data.user.first_last_name);
     localStorage.setItem("login_method", "internal");
     localStorage.setItem("puesto", data.user.puesto_trabajo);
+  if(data.user.email_office === null ) {
+    localStorage.setItem("email_office", "0");
+  } else {
+    localStorage.setItem("email_office", "1");
+  }
   }
 
   return data;
@@ -41,6 +46,11 @@ export async function login(identifier: string, password: string) {
   localStorage.setItem("nombre", data.user.first_name + ' ' + data.user.first_last_name);
   localStorage.setItem("login_method", "internal");
   localStorage.setItem("puesto", data.user.puesto_trabajo);
+  if(data.user.email_office === null ) {
+    localStorage.setItem("email_office", "0");
+  } else {
+    localStorage.setItem("email_office", "1");
+  }
 
   return data;
 }

@@ -18,6 +18,7 @@ import { DepartmentsView } from "./pages/DepartmentsView";
 import { ExternalPersonnelView } from "./pages/ExternalPersonnelView";
 import { UserModel } from "./types/UserModel";
 import { OrderListView } from "./pages/OrderListView";
+import { TruckInspectionHistoryView } from "./pages/TruckInspectionHistoryView";
 
 type View =
   "login"
@@ -30,7 +31,8 @@ type View =
   | "estrategias"
   | "departamentos"
   | "personal"
-  | "ordenes-compra";
+  | "ordenes-compra"
+  | "inspecciones-camiones";
 
 export default function App() {
 
@@ -287,6 +289,7 @@ export default function App() {
             {currentView === "departamentos" && <DepartmentsView onBack={goBack} />}
             {currentView === "personal" && <ExternalPersonnelView onBack={goBack}  />}
             {currentView === "ordenes-compra" && <OrderListView onBack={goBack}  />}
+            {currentView === "inspecciones-camiones" && <TruckInspectionHistoryView onBack={goBack}  />}
           </div>
         </div>
         <div className="hidden lg:block w-64 bg-white shadow-2xl border-l border-gray-200 flex-shrink-0 fixed top-[100px] right-0 bottom-0 h-[calc(100vh-80px)]">

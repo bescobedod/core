@@ -17,8 +17,8 @@ export async function getUsersByDepartamento(id_matriz: string) : Promise<UserMo
         let details: any;
         try { details = JSON.parse(text); } catch {}
 
-        console.error('Error al obtener usuarios: ', details || text);
-        alert(details?.error || details?.message || 'Error al obtener usuarios');
+            console.error('Error al obtener usuarios: ', details || text);
+            throw new Error(details?.error || details?.message || 'Error al obtener usuarios');
     }
 
     return response.json();
@@ -41,8 +41,8 @@ export async function getUsersByDepartamento2(departamento_id: string) : Promise
         let details: any;
         try { details = JSON.parse(text); } catch {}
 
-        console.error('Error al obtener usuarios: ', details || text);
-        alert(details?.error || details?.message || 'Error al obtener usuarios');
+            console.error('Error al obtener usuarios: ', details || text);
+            throw new Error(details?.error || details?.message || 'Error al obtener usuarios');
     }
 
     return response.json();
@@ -77,10 +77,30 @@ export async function searchUsers(query: string, departamento_id?: string) : Pro
         let details: any;
         try { details = JSON.parse(text); } catch {}
 
-        console.error('Error al buscar usuarios:', details || text);
-        alert(details?.error || details?.message || 'Error al buscar usuarios');
-        return [];
+            console.error('Error al buscar usuarios:', details || text);
+            throw new Error(details?.error || details?.message || 'Error al buscar usuarios');
     }
 
     return response.json();
+}
+
+export async function updateUser(email_office: string) {
+    const response = await authFetch(`/usuario/updateUser`, {
+    method: "PUT",
+    headers: {
+        'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ email_office }),
+  });
+
+  if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        let details: any;
+        try { details = JSON.parse(text); } catch {}
+
+                console.error('Error al actualizar usuario:', details || text);
+                throw new Error(details?.error || details?.message || 'Error al actualizar usuario');
+    }
+
+  return response.json();
 }
