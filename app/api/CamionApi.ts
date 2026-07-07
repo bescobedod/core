@@ -33,13 +33,7 @@ export async function getInspecciones(
         } catch {}
 
         console.error('Error al obtener las inspecciones de camiones:', details || text);
-
-        alert(
-            details?.error   ||
-            details?.message ||
-            'Error al obtener las inspecciones de camiones'
-        );
-
+        
         return {
             data: [],
             pagination: {

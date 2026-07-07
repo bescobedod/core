@@ -22,12 +22,11 @@ import truckFront from "../../assets/truck/truck_front.jpg";
 import truckBack from "../../assets/truck/truck_back.jpg";
 import truckLeft from "../../assets/truck/truck_left.jpg";
 import truckRight from "../../assets/truck/truck_right.jpg";
+import { exportInspeccionesExcel } from "../utils/exportInspeccionesExcel";
 
 interface TruckInspectionHistoryViewProps {
   onBack: () => void;
 }
-
-// ── Helpers sin cambios ────────────────────────────────────────────────────────
 
 function getScore(items: ChecklistItem[]) {
   if (!items || items.length === 0) return { good: 0, total: 0, pct: 0 };
@@ -241,6 +240,7 @@ export function TruckInspectionHistoryView({ onBack }: TruckInspectionHistoryVie
         10
       );
       setInspecciones(response.data);
+      console.log(response.data)
       setTotalPages(response.pagination.totalPages);
       setTotalRecords(response.pagination.total);
       setShowNoResultsModal(response.data.length === 0);
@@ -371,37 +371,37 @@ export function TruckInspectionHistoryView({ onBack }: TruckInspectionHistoryVie
         <div className="bg-white rounded-xl shadow-md border border-gray-200 p-4 mb-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
             <div>
-      <Label className="text-xs text-gray-700 mb-1.5 block">Placa del Vehículo</Label>
-      <Input 
-        type="text" 
-        placeholder="Ej: P-123ABC" 
-        value={placaFilter} 
-        onChange={(e) => setPlacaFilter(e.target.value)} 
-        className="h-9 text-xs" 
-      />
-    </div>
-    <div>
-      <Label className="text-xs text-gray-700 mb-1.5 block">Nombre del Conductor</Label>
-      <Input 
-        type="text" 
-        placeholder="Buscar conductor..." 
-        value={conductorFilter} 
-        onChange={(e) => setConductorFilter(e.target.value)} 
-        className="h-9 text-xs" 
-      />
-    </div>
+              <Label className="text-xs text-gray-700 mb-1.5 block">Placa del Vehículo</Label>
+              <Input 
+              type="text" 
+              placeholder="Ej: P-123ABC" 
+              value={placaFilter} 
+              onChange={(e) => setPlacaFilter(e.target.value)} 
+              className="h-9 text-xs" 
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-gray-700 mb-1.5 block">Nombre del Conductor</Label>
+              <Input 
+              type="text" 
+              placeholder="Buscar conductor..." 
+              value={conductorFilter} 
+              onChange={(e) => setConductorFilter(e.target.value)} 
+              className="h-9 text-xs" 
+              />
+            </div>
             <div>
               <Label className="text-xs text-gray-700 mb-1.5 block">Tipo de Fecha</Label>
               <select
-                value={dateFilterType}
-                onChange={(e) => {
-                  const type = e.target.value as typeof dateFilterType;
-                  setDateFilterType(type);
-                  if (type === "all") { setSingleDate(""); setStartDate(""); setEndDate(""); }
-                  else if (type === "single") { setSingleDate(format(new Date(), "yyyy-MM-dd")); setStartDate(""); setEndDate(""); }
-                  else { setSingleDate(""); }
-                }}
-                className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
+              value={dateFilterType}
+              onChange={(e) => {
+                const type = e.target.value as typeof dateFilterType;
+                setDateFilterType(type);
+                if (type === "all") { setSingleDate(""); setStartDate(""); setEndDate(""); }
+                else if (type === "single") { setSingleDate(format(new Date(), "yyyy-MM-dd")); setStartDate(""); setEndDate(""); }
+                else { setSingleDate(""); }
+              }}
+              className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
               >
                 <option value="all">Sin filtro de fecha</option>
                 <option value="single">Una Fecha</option>
@@ -422,6 +422,19 @@ export function TruckInspectionHistoryView({ onBack }: TruckInspectionHistoryVie
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => handleSearch()} className="border border-[#2183AE] bg-[#2183AE] text-white hover:bg-white hover:text-[#2183AE] flex items-center gap-2" size="sm" disabled={(dateFilterType === "range" && (!startDate || !endDate)) || (dateFilterType === "single" && !singleDate)}>
               <Filter className="h-3 w-3" /> Buscar
+            </Button>
+            <Button
+            onClick={async () => {
+              await exportInspeccionesExcel(
+                inspecciones,
+                getValesCombustible
+              );
+            }}
+            variant="outline"
+            size="sm"
+            disabled={inspecciones.length === 0}
+            >
+              Exportar Excel
             </Button>
             {hasActiveFilters && (
               <Button onClick={handleClearFilters} variant="outline" size="sm" className="border-gray-300 text-gray-700 hover:bg-gray-100">
@@ -497,20 +510,6 @@ export function TruckInspectionHistoryView({ onBack }: TruckInspectionHistoryVie
             </div>
           </div>
         )}
-        <AnimatePresence>
-          {showNoResultsModal && (
-            <motion.div key="no-results-modal" className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} transition={{ duration: 0.25, ease: "easeOut" }} className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 text-center border border-gray-100">
-                <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <AlertCircle className="h-12 w-12 text-red-600" />
-                </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">No se encontraron inspecciones</h3>
-                <p className="text-gray-600 mb-6">No hay inspecciones que coincidan con los parámetros seleccionados.</p>
-                <Button onClick={() => setShowNoResultsModal(false)} className="w-full bg-[#2183AE] text-white hover:bg-[#1a6a8f] py-4 rounded-xl font-semibold">Entendido</Button>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
         {hasSearched && totalPages > 1 && (
           <div className="flex items-center justify-center gap-3 mt-8">
             <Button variant="outline" disabled={page === 1} onClick={() => handleSearch(page - 1)}>Anterior</Button>

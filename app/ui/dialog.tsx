@@ -63,7 +63,13 @@ function DialogContent({
           className,
         )}
         onPointerDownOutside={(event) => {
-          event.preventDefault();
+          const target = event.target instanceof Element ? event.target : null;
+          const clickedOverlay = target?.closest('[data-slot="dialog-overlay"]');
+
+          if (clickedOverlay) {
+            event.preventDefault();
+          }
+
           onPointerDownOutside?.(event);
         }}
         onEscapeKeyDown={(event) => {

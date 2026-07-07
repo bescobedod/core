@@ -28,14 +28,25 @@ export interface OrdenCompraModel {
     fecha_requerida: Date;
 }
 
+// 1. NUEVA INTERFAZ: Para mapear las opciones de proveedores de cada artículo
+export interface ProveedorCotizado {
+    proveedor_id: string;
+    nombre_proveedor: string;
+    precio_unitario: number;
+    es_seleccionado: boolean;
+    imagen_url?: string | null;
+}
+
+// 2. MODIFICADO: Estructura que requiere tu controlador backend
 export interface ItemOrdenCompra {
     linea_solicitud_id: string;
     codigo_articulo: string;
     nombre_articulo: string;
-    proveedor_id: string;
     cantidad: number;
-    precio_unitario: number;
-    moneda: 'GTQ' | 'USD';
+    centro_costo?: string;    // Opcional para enviar al backend
+    cuenta_contable?: string;  // Opcional para enviar al backend
+    descripcion?: string;
+    proveedores: ProveedorCotizado[]; // <--- El arreglo que el backend leerá para hacer el bulkCreate
 }
 
 export interface CreateOrdenCompraPayload {
@@ -46,6 +57,13 @@ export interface CreateOrdenCompraPayload {
     };
     items: ItemOrdenCompra[];
     cotizacion?: File;
+    imagenesProveedor?: ImagenProveedorPayload[];
+}
+
+export interface ImagenProveedorPayload {
+    itemIndex: number;
+    proveedor_id: string;
+    file: File;
 }
 
 export interface CreateOrdenCompraResponse {
@@ -83,6 +101,7 @@ export interface LineaOrdenCompraModel {
     cuenta_contable: string;
     fecha_creacion: Date;
     descripcion: string;
+    proveedores?: LineaOrdenProveedorModel[];
 }
 
 export interface VwOrdenCompra {
@@ -139,4 +158,18 @@ export interface VwAprobadoresOrdenCompra {
     fecha_aprobacion: Date;
     aprobador: string;
     puesto: string;
+}
+
+export interface LineaOrdenProveedorModel {
+    id: string;
+    linea_orden_id: string;
+    proveedor_id: string;
+    nombre_proveedor: string;
+    precio_unitario: string;
+    descripcion?: string | null;
+    es_seleccionado: boolean;
+    imagen_s3_key?: string | null;
+    imagen_url?: string | null;
+    imagen_nombre?: string | null;
+    fecha_creacion: Date;
 }

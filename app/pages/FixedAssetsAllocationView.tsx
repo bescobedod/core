@@ -36,7 +36,7 @@ export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProp
   const [tempCodes, setTempCodes] = useState<{ [key: string]: string }>({});
   const [solicitudes, setSolicitudes] = useState<VwSolicitudCompra[]>([]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loadingSolicitudes, setLoadingSolicitudes] = useState<boolean>(true);
+  const [loadingSolicitudes, setLoadingSolicitudes] = useState<boolean>(false);
   const [loadingCodes, setLoadingCodes] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [sapSuccessData, setSapSuccessData] = useState<{docNum: number, requisicion: string} | null>(null);
@@ -75,7 +75,8 @@ export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProp
   }
 
   useEffect(() => {
-    fetchSolicitudes();
+    // fetchSolicitudes se ejecuta solamente cuando el usuario presiona Buscar
+    // o al confirmar el modal de éxito de SAP.
   }, [])
 
   const handleStartEditingCodes = () => {
@@ -195,18 +196,11 @@ export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProp
         requisicion: selectedPurchase.numero_requisicion
       });
 
-      await fetchSolicitudes();
-
       setEditingCodes(false);
       setValidatedCodes(new Set());
       setTempCodes({});
       setSelectedPurchase(null);
     } catch (err: any) {
-      alert(
-        err?.response?.data?.error ||
-        err?.message ||
-        "Error al guardar"
-      );
     } finally {
       setLoadingCodes(false);
     }
@@ -517,7 +511,10 @@ export function FixedAssetsAllocationView({ onBack } : FixedAssetsAllocationProp
                 <p className="text-3xl font-black text-[#2183AE]">{sapSuccessData.docNum}</p>
               </div>
               <Button 
-              onClick={() => setSapSuccessData(null)}
+              onClick={async () => {
+                setSapSuccessData(null);
+                await fetchSolicitudes();
+              }}
               className="w-full bg-gray-900 text-white hover:bg-gray-800 py-6 rounded-xl font-semibold text-lg"
               >
                 Entendido

@@ -1,31 +1,37 @@
 import { motion, AnimatePresence } from "motion/react";
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { MessageSquare, Clock, CheckCircle, XCircle, FileText, Calendar, User, Package, AlertCircle, Eye, Filter, X as XIcon, Check, Loader2, X, SearchX, Building2, ShoppingCart, DollarSign, Truck, CalendarArrowDown, CornerDownRight } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from "react-dom";
+import {
+  Clock,
+  CheckCircle,
+  XCircle,
+  FileText,
+  Calendar,
+  User,
+  Package,
+  AlertCircle,
+  Eye,
+  Filter,
+  X as XIcon,
+  Check,
+  Loader2,
+  X,
+  Building2,
+  DollarSign,
+  CalendarArrowDown,
+  CornerDownRight,
+  CircleQuestionMark
+} from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "../ui/dialog";
 import { VwAprobadoresSolicitudCompra } from "../types/SolicitudModel";
 import { getAprobacionSolicitud } from "../api/SolicitudApi";
-import { VwOrdenCompra, LineaOrdenCompraModel, VwAprobadoresOrdenCompra } from "../types/OrdenModel";
-import { getOrdenesCompraByUser, getOrdenesCompra, getAprobacionOrden } from "../api/OrdenApi";
+import { VwOrdenCompra, LineaOrdenProveedorModel, VwAprobadoresOrdenCompra } from "../types/OrdenModel";
+import { getOrdenesCompraByUser, getOrdenesCompra, getAprobacionOrden, getOrdenCompraDetalle } from "../api/OrdenApi";
 import { getPermiso } from "../api/MenuApi";
-import { getProveedores } from "../api/SapApi";
-import { ProveedorCombobox, type ProveedorState } from "./ProveedorCombobox";
-
-interface ItemFormState {
-  cantidad: number;
-  precio_unitario: number;
-  moneda: 'GTQ' | 'USD';
-}
 
 interface OrderListViewProps {
   onBack: () => void;
@@ -42,7 +48,7 @@ export function OrderListView({ onBack }: OrderListViewProps) {
   const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingAprobaciones, setLoadingAprobaciones] = useState(true);
-  const [loadingOrden, setLoadingOrden] = useState(false);
+  const [loadingDetalleOrden, setLoadingDetalleOrden] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
@@ -54,58 +60,11 @@ export function OrderListView({ onBack }: OrderListViewProps) {
   const [totalPages, setTotalPages] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
   const [permiso, setPermiso] = useState(true);
-  const [archivoExcel, setArchivoExcel] = useState<File | null>(null);
   const [loadingDetalleId, setLoadingDetalleId] = useState<string | null>(null);
-
-  const [proveedorOrden, setProveedorOrden] = useState<ProveedorState>({
-    searchTerm: "",
-    loading: false,
-    lista: [],
-    seleccionado: null,
-  });
-
-  const [itemsForm, setItemsForm] = useState<Record<string, ItemFormState>>({});
+  const [imagenGrande, setImagenGrande] = useState<{ url: string; nombre: string } | null>(null);
+  const lightboxRef = useRef<HTMLDivElement>(null);
 
   const hasActiveFilters = statusFilter !== "all" || dateFilterType !== "all";
-
-  // ── Al abrir el dialog resetea los estados del formulario de orden ───────────
-  const initItemsForm = useCallback((items: LineaOrdenCompraModel[], ordenId: string) => {
-    const initial: Record<string, ItemFormState> = {};
-    items.forEach((item, idx) => {
-      const key = `${ordenId}-${idx}`;
-      initial[key] = {
-        cantidad: Math.trunc(item.cantidad),
-        precio_unitario: 0,
-        moneda: 'GTQ',
-      };
-    });
-    setItemsForm(initial);
-  }, []);
-
-  const handleProveedorOrdenChange = useCallback(
-    (_key: string, patch: Partial<ProveedorState>) => {
-      setProveedorOrden(prev => ({ ...prev, ...patch }));
-    },
-    []
-  );
-
-  const handleItemFormChange = useCallback(
-    (key: string, field: keyof ItemFormState, value: string | number) => {
-      setItemsForm(prev => ({
-        ...prev,
-        [key]: {
-          ...prev[key],
-          [field]: field === 'moneda' ? value : Number(value),
-        },
-      }));
-    },
-    []
-  );
-
-  const handleTokenExpired = useCallback(() => {
-    localStorage.clear();
-    setIsAuthenticated(false);
-  }, []);
 
   const fetchSolicitudes = async (filters?: any) => {
     try {
@@ -185,42 +144,41 @@ export function OrderListView({ onBack }: OrderListViewProps) {
   };
 
   const handleOpenDetailDialog = async (orden: VwOrdenCompra) => {
-    try {
-      setLoadingDetalleId(orden.id);
-      setSelectedOrden(orden);
-      setProveedorOrden({ searchTerm: "", loading: false, lista: [], seleccionado: null });
-      setArchivoExcel(null);
-      initItemsForm(orden.items, orden.id);
-      await fetchAprobaciones(orden.solicitud_id);
-      await fetchAprobacionesOrden(orden.id);
-      setShowDetailDialog(true);
-    } catch (error) {
-      alert(error);
-    } finally {
-      setLoadingDetalleId(null);
+  try {
+    setLoadingDetalleId(orden.id);
+    setLoadingDetalleOrden(true);
+    setSelectedOrden(orden);
+    setExpandedArticles(new Set());
+
+    await fetchAprobaciones(orden.solicitud_id);
+    await fetchAprobacionesOrden(orden.id);
+
+    const detalle = await getOrdenCompraDetalle(orden.id);
+    if (detalle && detalle.id) {
+      setSelectedOrden(detalle);
+    } else {
+      setError('No se pudo cargar el detalle de proveedores de la orden');
     }
-  };
 
-  // ── Calcular monto total en tiempo real ──────────────────────────────────────
-  const calcularMontoTotal = (): number => {
-    return Object.values(itemsForm).reduce((acc, item) => {
-      return acc + (item.cantidad * item.precio_unitario);
-    }, 0);
-  };
-
-  // ── Validar que el formulario esté completo antes de enviar ──────────────────
-  const formularioValido = (): boolean => {
-    if (!proveedorOrden.seleccionado) return false;
-    if (!archivoExcel) return false;
-    return Object.values(itemsForm).every(
-      item => item.cantidad > 0 && item.precio_unitario > 0
-    );
-  };
+    setShowDetailDialog(true);
+  } catch (error) {
+    alert(error);
+  } finally {
+    setLoadingDetalleId(null);
+    setLoadingDetalleOrden(false);
+  }
+};
 
   useEffect(() => {
     window.scrollTo(0, 0);
     fetchPermiso();
   }, []);
+
+  useEffect(() => {
+    const isOpen = showDetailDialog && !loadingAprobaciones && !loadingDetalleOrden;
+    document.body.style.overflow = isOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [showDetailDialog, loadingAprobaciones, loadingDetalleOrden]);
 
   const handleClearFilters = () => {
     setStatusFilter("all");
@@ -300,197 +258,260 @@ export function OrderListView({ onBack }: OrderListViewProps) {
 
   const renderTracking = () => (
     <>
-    
-    <div>
-      <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-        <Clock className="h-4 w-4 text-[#2183AE]" />
-        Tracking de Aprobación Solicitud de Compra
-      </h4>
-      <div className="space-y-3">
-        <div className="flex gap-3">
-          <div className="flex flex-col items-center">
-            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-              <FileText className="h-4 w-4 text-blue-600" />
-            </div>
-            <div className="w-0.5 h-full bg-gray-200 mt-2"></div>
-          </div>
-          <div className="flex-1 pb-4">
-            <p className="text-sm font-medium text-gray-900">Solicitud Creada</p>
-            <p className="text-xs text-gray-600">{format(aprobaciones[0].fecha_aprobacion, "dd/MM/yyyy HH:mm", { locale: es })}</p>
-            <p className="text-xs text-gray-500 mt-1">Por {selectedOrden!.solicitado_por}</p>
-          </div>
-        </div>
-        {aprobaciones.map((approver, index) => (
-          <div key={index} className="flex gap-3">
+      <div>
+        <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+          <Clock className="h-4 w-4 text-[#2183AE]" />
+          Tracking de Aprobación Solicitud de Compra
+        </h4>
+        <div className="space-y-3">
+          <div className="flex gap-3">
             <div className="flex flex-col items-center">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                approver.estado === "APROBADO" ? 'bg-green-100' : 'bg-gray-100'
-              }`}>
-                {approver.estado === "APROBADO" ? (
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                ) : approver.estado === "DELEGADO" ? (
-                    <CornerDownRight className="h-4 w-4 text-green-600" />
-                ) : (
-                  <Clock className="h-4 w-4 text-gray-400" />
-                )}
+              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                <FileText className="h-4 w-4 text-blue-600" />
               </div>
-              {index < aprobaciones.length - 1 && (
-                <div className="w-0.5 h-full bg-gray-200 mt-2"></div>
-              )}
+              <div className="w-0.5 h-full bg-gray-200 mt-2"></div>
             </div>
             <div className="flex-1 pb-4">
-              <p className="text-sm font-medium text-gray-900">{approver.aprobador}</p>
-              <p className="text-xs text-gray-600">{approver.puesto}</p>
-              {approver.estado === "APROBADO" && approver.fecha_aprobacion ? (
-                <div className="mt-2 text-xs">
-                  <p className="text-green-600 font-medium">
-                    ✓ Aprobado el {format(approver.fecha_aprobacion, "dd/MM/yyyy HH:mm", { locale: es })}
-                  </p>
-                  {approver.comentarios && (
-                    <p className="text-gray-600 mt-1 italic">"{approver.comentarios}"</p>
-                  )}
-                </div>
-              ) : approver.estado === "RECHAZADO" && approver.fecha_aprobacion ? (
-                <div className="mt-2 text-xs">
-                  <p className="text-red-600 font-medium">
-                    ✗ Denegado el {format(approver.fecha_aprobacion, "dd/MM/yyyy HH:mm", { locale: es })}
-                  </p>
-                  {approver.comentarios && (
-                    <p className="text-gray-600 mt-1 italic">"{approver.comentarios}"</p>
-                  )}
-                </div>
-              ) : approver.estado === "DELEGADO" && approver.fecha_aprobacion ? (
-                <div className="mt-2 text-xs">
-                  <p className="text-green-600 font-medium">
-                    Delegado el {format(approver.fecha_aprobacion, "dd/MM/yyyy HH:mm", { locale: es })}
-                  </p>
-                  {approver.comentarios && (
-                    <p className="text-gray-600 mt-1 italic">"{approver.comentarios}"</p>
-                  )}
-                </div>
-              ) : (
-                <p className="text-xs text-gray-500 mt-1">Pendiente de aprobación</p>
-              )}
+              <p className="text-sm font-medium text-gray-900">Solicitud Creada</p>
+              <p className="text-xs text-gray-600">{format(aprobaciones[0].fecha_aprobacion, "dd/MM/yyyy HH:mm", { locale: es })}</p>
+              <p className="text-xs text-gray-500 mt-1">Por {selectedOrden!.solicitado_por}</p>
             </div>
           </div>
-        ))}
-      </div>
-    </div>
-    <div>
-      <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-        <Clock className="h-4 w-4 text-[#2183AE]" />
-        Tracking de Aprobación Orden de Compra
-      </h4>
-      <div className="space-y-3">
-        <div className="flex gap-3">
-          <div className="flex flex-col items-center">
-            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-              <FileText className="h-4 w-4 text-blue-600" />
-            </div>
-            <div className="w-0.5 h-full bg-gray-200 mt-2"></div>
-          </div>
-          <div className="flex-1 pb-4">
-            <p className="text-sm font-medium text-gray-900">Orden Creada</p>
-            <p className="text-xs text-gray-600">{format(selectedOrden!.fecha_creacion, "dd/MM/yyyy HH:mm", { locale: es })}</p>
-            <p className="text-xs text-gray-500 mt-1">Por {selectedOrden!.solicitado_por}</p>
-          </div>
-        </div>
-        {aprobacionesOrden.map((approver, index) => (
-          <div key={index} className="flex gap-3">
-            <div className="flex flex-col items-center">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                approver.estado === "APROBADO" ? 'bg-green-100' : 'bg-gray-100'
-              }`}>
-                {approver.estado === "APROBADO" ? (
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                ) : (
-                  <Clock className="h-4 w-4 text-gray-400" />
+          {aprobaciones.map((approver, index) => (
+            <div key={index} className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                  approver.estado === "APROBADO" ? 'bg-green-100' : 'bg-gray-100'
+                }`}>
+                  {approver.estado === "APROBADO" ? (
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                  ) : approver.estado === "DELEGADO" ? (
+                      <CornerDownRight className="h-4 w-4 text-green-600" />
+                  ) : approver.estado === "NO APLICA" ? (
+                      <CircleQuestionMark className="h-4 w-4 text-gray-600" />
+                  ) : (
+                    <Clock className="h-4 w-4 text-gray-400" />
+                  )}
+                </div>
+                {index < aprobaciones.length - 1 && (
+                  <div className="w-0.5 h-full bg-gray-200 mt-2"></div>
                 )}
               </div>
-              {index < aprobaciones.length - 1 && (
-                <div className="w-0.5 h-full bg-gray-200 mt-2"></div>
-              )}
+              <div className="flex-1 pb-4">
+                <p className="text-sm font-medium text-gray-900">{approver.aprobador}</p>
+                <p className="text-xs text-gray-600">{approver.puesto}</p>
+                {approver.estado === "APROBADO" && approver.fecha_aprobacion ? (
+                  <div className="mt-2 text-xs">
+                    <p className="text-green-600 font-medium">
+                      ✓ Aprobado el {format(approver.fecha_aprobacion, "dd/MM/yyyy HH:mm", { locale: es })}
+                    </p>
+                    {approver.comentarios && (
+                      <p className="text-gray-600 mt-1 italic">"{approver.comentarios}"</p>
+                    )}
+                  </div>
+                ) : approver.estado === "NO APLICA" ? (
+                  <div className="mt-2 text-xs">
+                    <p className="text-gray-600 font-medium">
+                      ? NO APLICA APROBACIÓN
+                    </p>
+                    {approver.comentarios && (
+                      <p className="text-gray-600 mt-1 italic">"{approver.comentarios}"</p>
+                    )}
+                  </div>
+                ) : approver.estado === "RECHAZADO" && approver.fecha_aprobacion ? (
+                  <div className="mt-2 text-xs">
+                    <p className="text-red-600 font-medium">
+                      ✗ Denegado el {format(approver.fecha_aprobacion, "dd/MM/yyyy HH:mm", { locale: es })}
+                    </p>
+                    {approver.comentarios && (
+                      <p className="text-gray-600 mt-1 italic">"{approver.comentarios}"</p>
+                    )}
+                  </div>
+                ) : approver.estado === "DELEGADO" && approver.fecha_aprobacion ? (
+                  <div className="mt-2 text-xs">
+                    <p className="text-green-600 font-medium">
+                      Delegado el {format(approver.fecha_aprobacion, "dd/MM/yyyy HH:mm", { locale: es })}
+                    </p>
+                    {approver.comentarios && (
+                      <p className="text-gray-600 mt-1 italic">"{approver.comentarios}"</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500 mt-1">Pendiente de aprobación</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
+        <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+          <Clock className="h-4 w-4 text-[#2183AE]" />
+          Tracking de Aprobación Orden de Compra
+        </h4>
+        <div className="space-y-3">
+          <div className="flex gap-3">
+            <div className="flex flex-col items-center">
+              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                <FileText className="h-4 w-4 text-blue-600" />
+              </div>
+              <div className="w-0.5 h-full bg-gray-200 mt-2"></div>
             </div>
             <div className="flex-1 pb-4">
-              <p className="text-sm font-medium text-gray-900">{approver.puesto}</p>
-              <p className="text-xs text-gray-600">{approver.aprobador}</p>
-              {approver.estado === "APROBADO" && approver.fecha_aprobacion ? (
-                <div className="mt-2 text-xs">
-                  <p className="text-green-600 font-medium">
-                    ✓ Aprobado el {format(approver.fecha_aprobacion, "dd/MM/yyyy HH:mm", { locale: es })}
-                  </p>
-                  {approver.comentarios && (
-                    <p className="text-gray-600 mt-1 italic">"{approver.comentarios}"</p>
-                  )}
-                </div>
-              ) : approver.estado === "RECHAZADO" && approver.fecha_aprobacion ? (
-                <div className="mt-2 text-xs">
-                  <p className="text-red-600 font-medium">
-                    ✗ Denegado el {format(approver.fecha_aprobacion, "dd/MM/yyyy HH:mm", { locale: es })}
-                  </p>
-                  {approver.comentarios && (
-                    <p className="text-gray-600 mt-1 italic">"{approver.comentarios}"</p>
-                  )}
-                </div>
-              ) : (
-                <p className="text-xs text-gray-500 mt-1">Pendiente de aprobación</p>
-              )}
+              <p className="text-sm font-medium text-gray-900">Orden Creada</p>
+              <p className="text-xs text-gray-600">{format(selectedOrden!.fecha_creacion, "dd/MM/yyyy HH:mm", { locale: es })}</p>
+              <p className="text-xs text-gray-500 mt-1">Por {selectedOrden!.solicitado_por}</p>
             </div>
           </div>
-        ))}
+          {aprobacionesOrden.map((approver, index) => (
+            <div key={index} className="flex gap-3">
+              <div className="flex flex-col items-center">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                  approver.estado === "APROBADO" ? 'bg-green-100' : 'bg-gray-100'
+                }`}>
+                  {approver.estado === "APROBADO" ? (
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <Clock className="h-4 w-4 text-gray-400" />
+                  )}
+                </div>
+                {index < aprobaciones.length - 1 && (
+                  <div className="w-0.5 h-full bg-gray-200 mt-2"></div>
+                )}
+              </div>
+              <div className="flex-1 pb-4">
+                <p className="text-sm font-medium text-gray-900">{approver.puesto}</p>
+                <p className="text-xs text-gray-600">{approver.aprobador}</p>
+                {approver.estado === "APROBADO" && approver.fecha_aprobacion ? (
+                  <div className="mt-2 text-xs">
+                    <p className="text-green-600 font-medium">
+                      ✓ Aprobado el {format(approver.fecha_aprobacion, "dd/MM/yyyy HH:mm", { locale: es })}
+                    </p>
+                    {approver.comentarios && (
+                      <p className="text-gray-600 mt-1 italic">"{approver.comentarios}"</p>
+                    )}
+                  </div>
+                ) : approver.estado === "RECHAZADO" && approver.fecha_aprobacion ? (
+                  <div className="mt-2 text-xs">
+                    <p className="text-red-600 font-medium">
+                      ✗ Denegado el {format(approver.fecha_aprobacion, "dd/MM/yyyy HH:mm", { locale: es })}
+                    </p>
+                    {approver.comentarios && (
+                      <p className="text-gray-600 mt-1 italic">"{approver.comentarios}"</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500 mt-1">Pendiente de aprobación</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
     </>
   );
 
-  // ── Sección de proveedor único + resumen de monto ────────────────────────────
-  const renderProveedorOrden = () => (
-    <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 space-y-3">
-      <h4 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-        <Building2 className="h-4 w-4 text-[#2183AE]" />
-        Proveedor de la Orden
-        <span className="text-red-500">*</span>
-      </h4>
-      <p className="text-xs text-gray-500">
-        Se asignará un único proveedor para todos los artículos de esta orden de compra.
-      </p>
-      <ProveedorCombobox
-        itemKey="orden-proveedor"
-        idEmpresa={selectedOrden!.id_empresa}
-        state={proveedorOrden}
-        onChange={handleProveedorOrdenChange}
-        getProveedores={getProveedores}
-        getToken={handleTokenExpired}
-      />
-    </div>
-  );
-
-  // ── Resumen financiero calculado en tiempo real ──────────────────────────────
-  const renderResumenMonto = () => {
-    const total = calcularMontoTotal();
-    const todasConPrecio = Object.values(itemsForm).every(i => i.precio_unitario > 0);
-    const monedas = [...new Set(Object.values(itemsForm).map(i => i.moneda))];
-    const monedaMixta = monedas.length > 1;
+  const renderProveedoresLinea = (proveedores?: LineaOrdenProveedorModel[]) => {
+    if (!proveedores || proveedores.length === 0) {
+      return (
+        <p className="text-xs text-gray-400 italic mt-2">
+          No hay proveedores registrados para este artículo
+        </p>
+      );
+    }
 
     return (
-      <div className={`rounded-xl p-4 border ${todasConPrecio ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50 border-gray-200'}`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-gray-900">Monto Total Estimado</span>
+      <div className="mt-3 space-y-2">
+        <p className="text-[11px] text-gray-400 font-medium uppercase tracking-wide flex items-center gap-1">
+          <Building2 className="h-3 w-3" />
+          Proveedores Cotizados
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {proveedores.map((prov) => (
+            <div
+            key={prov.id}
+            className={`border rounded-xl p-3 flex gap-3 ${
+              prov.es_seleccionado
+                ? 'border-emerald-300 bg-emerald-50'
+                : 'border-gray-200 bg-white'
+            }`}
+            >
+              {prov.imagen_url ? (
+                <button
+                type="button"
+                onClick={() => setImagenGrande({ url: prov.imagen_url!, nombre: prov.nombre_proveedor })}
+                className="shrink-0 rounded-lg overflow-hidden border border-gray-200 hover:border-[#2183AE] transition-colors"
+                >
+                  <img
+                  src={prov.imagen_url}
+                  alt={prov.nombre_proveedor}
+                  className="w-14 h-14 object-cover"
+                  />
+                </button>
+              ) : (
+                <div className="w-14 h-14 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center shrink-0">
+                  <Building2 className="h-5 w-5 text-gray-300" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs font-semibold text-gray-900 break-words">
+                    {prov.nombre_proveedor}
+                  </p>
+                  {prov.es_seleccionado && (
+                    <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-medium flex items-center gap-0.5">
+                      <CheckCircle className="h-2.5 w-2.5" />
+                      Seleccionado
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs font-semibold text-gray-700 mt-1">
+                  {selectedOrden?.moneda ?? 'GTQ'}{' '}
+                  {parseFloat(String(prov.precio_unitario)).toLocaleString('es-GT', { minimumFractionDigits: 2 })}
+                </p>
+                {prov.descripcion && (
+                  <p className="text-[11px] text-gray-500 mt-1 italic line-clamp-2">
+                    {prov.descripcion}
+                  </p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCotizacionAdjunta = () => {
+    if (!selectedOrden?.cotizacion_url) {
+      return (
+        <p className="text-xs text-gray-400 italic">No se adjuntó archivo de cotización</p>
+      );
+    }
+
+    return (
+      <div className="border border-gray-200 rounded-xl p-4 bg-gray-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center shrink-0">
+            <FileText className="h-5 w-5 text-emerald-600" />
           </div>
-          <div className="text-right">
-            {monedaMixta ? (
-              <p className="text-xs text-amber-600 font-medium">Monedas mixtas — revisar</p>
-            ) : (
-              <p className={`text-lg font-bold ${todasConPrecio ? 'text-emerald-700' : 'text-gray-400'}`}>
-                {monedas[0] ?? 'GTQ'} {total.toLocaleString('es-GT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-            )}
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-gray-900 truncate">
+              {selectedOrden.cotizacion_nombre || 'Cotización adjunta'}
+            </p>
+            <p className="text-xs text-gray-500">Archivo de cotización</p>
           </div>
         </div>
-        {!todasConPrecio && (
-          <p className="text-xs text-gray-500 mt-2">Completa los costos unitarios para ver el total</p>
-        )}
+        <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="shrink-0 border-[#2183AE] text-[#2183AE] hover:bg-[#2183AE] hover:text-white"
+        onClick={() => window.open(selectedOrden.cotizacion_url, '_blank', 'noopener,noreferrer')}
+        >
+          <Eye className="h-3.5 w-3.5 mr-1" />
+          Ver archivo
+        </Button>
       </div>
     );
   };
@@ -595,14 +616,14 @@ export function OrderListView({ onBack }: OrderListViewProps) {
                     }}
                     className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
                     >
-                        <option value="single">Una Fecha</option>
-                        <option value="range">Rango de fechas</option>
-                        <option value="all">Sin filtro de fecha</option>
+                      <option value="single">Una Fecha</option>
+                      <option value="range">Rango de fechas</option>
+                      <option value="all">Sin filtro de fecha</option>
                     </select>
                 </div>
                 <div>
                     <Label className="text-xs text-gray-700 mb-1.5 block">
-                        {dateFilterType === "range" ? "Desde" : "Fecha"}
+                      {dateFilterType === "range" ? "Desde" : "Fecha"}
                     </Label>
                     <Input
                     type="date"
@@ -617,12 +638,12 @@ export function OrderListView({ onBack }: OrderListViewProps) {
                         {dateFilterType === "range" ? "Hasta" : ""}
                     </Label>
                     {dateFilterType === "range" && (
-                        <Input
-                        type="date"
-                        value={endDate}
-                        onChange={(e) => setEndDate(e.target.value)}
-                        className="h-9 text-xs w-min"
-                        />
+                      <Input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="h-9 text-xs w-min"
+                      />
                     )}
                 </div>
             </div>
@@ -632,38 +653,38 @@ export function OrderListView({ onBack }: OrderListViewProps) {
                 className="border border-[#2183AE] bg-[#2183AE] text-white hover:bg-white hover:text-[#2183AE] flex items-center gap-2"
                 size="sm"
                 disabled={
-                    (dateFilterType === "range"  && (!startDate || !endDate)) ||
-                    (dateFilterType === "single" && !singleDate)
+                  (dateFilterType === "range"  && (!startDate || !endDate)) ||
+                  (dateFilterType === "single" && !singleDate)
                 }
                 >
-                    <Filter className="h-3 w-3" />
-                    Buscar
+                  <Filter className="h-3 w-3" />
+                  Buscar
                 </Button>
                 {hasActiveFilters && (
-                    <Button onClick={handleClearFilters} variant="outline" size="sm" className="border-gray-300 text-gray-700 hover:bg-gray-100">
-                        <XIcon className="h-3 w-3 mr-1" />
-                        Limpiar
-                    </Button>
+                  <Button onClick={handleClearFilters} variant="outline" size="sm" className="border-gray-300 text-gray-700 hover:bg-gray-100">
+                    <XIcon className="h-3 w-3 mr-1" />
+                    Limpiar
+                  </Button>
                 )}
                 {statusFilter !== "all" && (
-                    <span className="px-3 py-1.5 bg-[#2183AE]/10 text-[#2183AE] text-xs rounded-lg flex items-center gap-1">
-                        {statusFilter === "PENDIENTE" && "Pendientes"}
-                        {statusFilter === "APROBADO"  && "Aprobadas"}
-                    </span>
+                  <span className="px-3 py-1.5 bg-[#2183AE]/10 text-[#2183AE] text-xs rounded-lg flex items-center gap-1">
+                    {statusFilter === "PENDIENTE" && "Pendientes"}
+                    {statusFilter === "APROBADO"  && "Aprobadas"}
+                  </span>
                 )}
                 {dateFilterType === "single" && singleDate && (
-                    <span className="px-3 py-1.5 bg-[#2183AE]/10 text-[#2183AE] text-xs rounded-lg flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        {singleDate.split("-").reverse().join("/")}
-                    </span>
+                  <span className="px-3 py-1.5 bg-[#2183AE]/10 text-[#2183AE] text-xs rounded-lg flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    {singleDate.split("-").reverse().join("/")}
+                  </span>
                 )}
                 {dateFilterType === "range" && (startDate || endDate) && (
-                    <span className="px-3 py-1.5 bg-[#2183AE]/10 text-[#2183AE] text-xs rounded-lg flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        {startDate && format(new Date(startDate), "dd/MM/yyyy")}
-                        {startDate && endDate && " - "}
-                        {endDate && format(new Date(endDate), "dd/MM/yyyy")}
-                    </span>
+                  <span className="px-3 py-1.5 bg-[#2183AE]/10 text-[#2183AE] text-xs rounded-lg flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    {startDate && format(new Date(startDate), "dd/MM/yyyy")}
+                    {startDate && endDate && " - "}
+                    {endDate && format(new Date(endDate), "dd/MM/yyyy")}
+                  </span>
                 )}
             </div>
         </div>
@@ -685,8 +706,6 @@ export function OrderListView({ onBack }: OrderListViewProps) {
             <p className="text-gray-600 text-sm">Selecciona los filtros deseados y presiona el botón "Buscar"</p>
           </div>
         )}
-
-        {/* ── Órdenes Pendientes ───────────────────────────────────────────── */}
         {hasSearched && pendingRequests.length > 0 && !loading && (
           <div className="mb-8">
             <div className="flex items-center gap-2 mb-4">
@@ -699,11 +718,11 @@ export function OrderListView({ onBack }: OrderListViewProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {pendingRequests.map((request, index) => (
                 <motion.div
-                  key={request.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1, duration: 0.3 }}
-                  className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow"
+                key={request.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1, duration: 0.3 }}
+                className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow"
                 >
                   <div className="p-4 bg-gradient-to-r from-[#2183AE] to-[#1a6a8f] text-white">
                     <div className="flex items-center justify-between mb-2">
@@ -722,10 +741,10 @@ export function OrderListView({ onBack }: OrderListViewProps) {
                       <p className="text-2xl font-bold text-gray-900">{request.items?.length ?? 0}</p>
                     </div>
                     <Button
-                      onClick={() => handleOpenDetailDialog(request)}
-                      variant="outline"
-                      size="sm"
-                      className="w-full border-[#2183AE] bg-[#2183AE] text-white hover:bg-white hover:text-[#2183AE]"
+                    onClick={() => handleOpenDetailDialog(request)}
+                    variant="outline"
+                    size="sm"
+                    className="w-full border-[#2183AE] bg-[#2183AE] text-white hover:bg-white hover:text-[#2183AE]"
                     >
                       {loadingDetalleId === request.id ? (
                         <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Cargando...</>
@@ -739,51 +758,6 @@ export function OrderListView({ onBack }: OrderListViewProps) {
             </div>
           </div>
         )}
-
-        <AnimatePresence>
-          {showNoResultsModal && (
-            <motion.div
-              key="no-results-modal"
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              <motion.div
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
-                transition={{ duration: 0.25, ease: "easeOut" }}
-                className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 text-center border border-gray-100"
-              >
-                <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <AlertCircle className="h-12 w-12 text-red-600" />
-                </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">No se encontraron órdenes</h3>
-                <p className="text-gray-600 mb-6">
-                  No hay órdenes de compra que coincidan con los parámetros seleccionados.
-                </p>
-                <Button
-                  onClick={() => setShowNoResultsModal(false)}
-                  className="w-full bg-[#2183AE] text-white hover:bg-[#1a6a8f] py-4 rounded-xl font-semibold"
-                >
-                  Entendido
-                </Button>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-        {hasSearched && pendingRequests.length === 0 && reviewedRequests.length === 0 && !loading && !showNoResultsModal && (
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 text-center mb-8">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <SearchX className="h-8 w-8 text-gray-400" />
-            </div>
-            <h3 className="text-gray-900 mb-2">No se encontraron órdenes</h3>
-            <p className="text-gray-600 text-sm">No hay órdenes que coincidan con los filtros seleccionados</p>
-          </div>
-        )}
-
-        {/* ── Órdenes Revisadas ────────────────────────────────────────────── */}
         {hasSearched && reviewedRequests.length > 0 && !loading && (
           <div>
             <div className="flex items-center gap-2 mb-4">
@@ -796,11 +770,11 @@ export function OrderListView({ onBack }: OrderListViewProps) {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {reviewedRequests.map((request, index) => (
                 <motion.div
-                  key={request.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1, duration: 0.3 }}
-                  className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow opacity-75"
+                key={request.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1, duration: 0.3 }}
+                className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow opacity-75"
                 >
                   <div className="p-4 bg-gradient-to-r from-[#2183AE] to-[#1a6a8f]">
                     <div className="flex items-center justify-between mb-2">
@@ -836,8 +810,6 @@ export function OrderListView({ onBack }: OrderListViewProps) {
             </div>
           </div>
         )}
-
-        {/* ── Paginación ───────────────────────────────────────────────────────── */}
         {hasSearched && totalPages > 1 && (
           <div className="flex items-center justify-center gap-3 mt-8">
             <Button variant="outline" disabled={page === 1} onClick={() => handleSearch(page - 1)}>Anterior</Button>
@@ -845,86 +817,99 @@ export function OrderListView({ onBack }: OrderListViewProps) {
             <Button variant="outline" disabled={page === totalPages} onClick={() => handleSearch(page + 1)}>Siguiente</Button>
           </div>
         )}
-
-        {/* ══════════════════════════════════════════════════════════════════════
-            Dialog detalle / iniciar orden de compra
-        ══════════════════════════════════════════════════════════════════════ */}
-        <Dialog
-          open={showDetailDialog && !loadingAprobaciones}
-          onOpenChange={(open) => {
-            setShowDetailDialog(open);
-            if (!open) {
-              setArchivoExcel(null);
-              setProveedorOrden({ searchTerm: "", loading: false, lista: [], seleccionado: null });
-              setItemsForm({});
-            }
-          }}
-        >
-        <DialogContent className="!max-w-3xl max-h-[90vh] overflow-hidden flex flex-col p-0">
-            <div className="overflow-y-auto flex-1 px-6 pt-6 pb-6 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-300">
-              {selectedOrden && (
-                  <>
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-3">
-                        <FileText className="h-6 w-6 text-[#2183AE]" />
-                        {selectedOrden.numero_orden} {getStatusBadge(selectedOrden.estado)}
-                      </DialogTitle>
-                      <DialogDescription asChild>
-                        <div className="flex flex-col gap-2 mt-2">
-                          <div className="flex items-center gap-2 text-sm"><User className="h-4 w-4" /><span><strong>Solicitado por:</strong> {selectedOrden.solicitado_por}</span></div>
-                          <div className="flex items-center gap-2 text-sm"><Building2 className="h-4 w-4" /><span><strong>Empresa:</strong> {selectedOrden.empresa?.nombre}</span></div>
-                          <div className="flex items-center gap-2 text-sm"><Calendar className="h-4 w-4" /><span><strong>Fecha de creación:</strong> {format(selectedOrden.fecha_creacion, "dd 'de' MMMM 'de' yyyy 'a las' HH:mm", { locale: es })}</span></div>
-                          <div className="flex items-center gap-2 text-sm"><CalendarArrowDown className="h-4 w-4" /><span><strong>Fecha requerida:</strong> {format(selectedOrden.fecha_requerida, "dd 'de' MMMM 'de' yyyy 'a las' HH:mm", { locale: es })}</span></div>
-                          <div className="flex items-center gap-2 text-sm"><Truck className="h-4 w-4" /><span><strong>Proveedor:</strong></span></div>
-                          <div className="flex items-center gap-2 text-sm"><span>{selectedOrden.proveedor}</span></div>
-                          {selectedOrden.sap_doc_num && (
-                            <div className="flex items-center gap-2 text-sm"><Check className="h-4 w-4" /><span>Id de SAP: <strong>{selectedOrden.sap_doc_num}</strong></span></div>
-                          )}
-                          <div className="flex items-center gap-2 text-sm"><Building2 className="h-4 w-4" /><span><strong>Numero de Requisición:</strong> {selectedOrden.solicitud?.numero_requisicion}</span></div>
+        {createPortal(
+          <AnimatePresence>
+            {showDetailDialog && !loadingAprobaciones && !loadingDetalleOrden && (
+              <motion.div
+              key="detalle-orden-backdrop"
+              className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                if (imagenGrande) return;
+                setShowDetailDialog(false);
+              }}
+              >
+                <motion.div
+                key="detalle-orden-content"
+                className="relative bg-white rounded-lg shadow-lg !max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col p-0"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                  type="button"
+                  onClick={() => setShowDetailDialog(false)}
+                  className="absolute right-4 top-4 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none z-10"
+                  >
+                    <X className="h-4 w-4" />
+                    <span className="sr-only">Close</span>
+                  </button>
+                  <div className="overflow-y-auto flex-1 px-6 pt-6 pb-6 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-gray-300">
+                    {selectedOrden && (
+                      <>
+                        <div className="flex flex-col gap-1.5">
+                          <h2 className="text-lg font-semibold leading-none tracking-tight flex items-center gap-3">
+                            <FileText className="h-6 w-6 text-[#2183AE]" />
+                            {selectedOrden.numero_orden} {getStatusBadge(selectedOrden.estado)}
+                          </h2>
+                          <div className="flex flex-col gap-2 mt-2">
+                            <div className="flex items-center gap-2 text-sm"><User className="h-4 w-4" /><span><strong>Solicitado por:</strong> {selectedOrden.solicitado_por}</span></div>
+                            <div className="flex items-center gap-2 text-sm"><Building2 className="h-4 w-4" /><span><strong>Empresa:</strong> {selectedOrden.empresa?.nombre}</span></div>
+                            <div className="flex items-center gap-2 text-sm"><Calendar className="h-4 w-4" /><span><strong>Fecha de creación:</strong> {format(selectedOrden.fecha_creacion, "dd 'de' MMMM 'de' yyyy 'a las' HH:mm", { locale: es })}</span></div>
+                            <div className="flex items-center gap-2 text-sm"><CalendarArrowDown className="h-4 w-4" /><span><strong>Fecha requerida:</strong> {format(selectedOrden.fecha_requerida, "dd 'de' MMMM 'de' yyyy 'a las' HH:mm", { locale: es })}</span></div>
+                            {selectedOrden.sap_doc_num && (
+                              <div className="flex items-center gap-2 text-sm"><Check className="h-4 w-4" /><span>Id de SAP: <strong>{selectedOrden.sap_doc_num}</strong></span></div>
+                            )}
+                            <div className="flex items-center gap-2 text-sm"><Building2 className="h-4 w-4" /><span><strong>Numero de Requisición:</strong> {selectedOrden.solicitud?.numero_requisicion}</span></div>
+                          </div>
                         </div>
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-6 py-4">
-                      <div>
-                        <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                          <Package className="h-4 w-4 text-[#2183AE]" />
-                          Artículos Solicitados ({selectedOrden.items?.length ?? 0})
-                        </h4>
-                        <div className="space-y-2">
-                          {selectedOrden.items.map((item, idx) => {
-                            const key = `${selectedOrden.id}-${idx}`;
-                            const isOpen = expandedArticles.has(key);
-                            return (
-                              <div key={key} className="border border-gray-200 rounded-xl bg-white shadow-sm overflow-hidden">
-                                <div className="p-4 flex justify-between items-start cursor-pointer" onClick={() => toggleArticle(key)}>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-semibold text-gray-900">{item.nombre_articulo}</p>
-                                    <p className="text-xs text-gray-500 mt-0.5">Código: {item.codigo_articulo}</p>
-                                    <div className="mt-2 inline-flex items-center px-2 py-1 rounded-md bg-[#2183AE]/10 text-[#2183AE] text-xs font-medium">
-                                      Cantidad: {Math.trunc(item.cantidad)}
+                        <div className="space-y-6 py-4">
+                          <div>
+                            <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                              <Package className="h-4 w-4 text-[#2183AE]" />
+                              Artículos Solicitados ({selectedOrden.items?.length ?? 0})
+                            </h4>
+                            <div className="space-y-2">
+                              {selectedOrden.items.map((item, idx) => {
+                                const key = `${selectedOrden.id}-${idx}`;
+                                const isOpen = expandedArticles.has(key);
+
+                                return (
+                                  <div key={key} className="border border-gray-200 rounded-xl bg-white shadow-sm overflow-hidden">
+                                    <div className="p-4 flex justify-between items-start cursor-pointer" onClick={() => toggleArticle(key)}>
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-semibold text-gray-900">{item.nombre_articulo}</p>
+                                        <p className="text-xs text-gray-500 mt-0.5">{item.descripcion}</p>
+                                        <p className="text-xs text-gray-500 mt-0.5">Código: {item.codigo_articulo}</p>
+                                        <div className="mt-2 inline-flex items-center px-2 py-1 rounded-md bg-[#2183AE]/10 text-[#2183AE] text-xs font-medium">
+                                          Cantidad: {Math.trunc(item.cantidad)}
+                                        </div>
+                                      </div>
+                                      {parseFloat(item.total_linea) > 0 && (
+                                        <div className="text-right mr-3">
+                                          <p className="text-xs text-gray-400 mb-0.5">Subtotal</p>
+                                          <p className="text-sm font-bold text-emerald-600 whitespace-nowrap">
+                                            {selectedOrden.moneda} {parseFloat(item.total_linea).toLocaleString('es-GT', { minimumFractionDigits: 2 })}
+                                          </p>
+                                        </div>
+                                      )}
+                                      <div className="text-xs text-gray-500">{isOpen ? "▲" : "▼"}</div>
                                     </div>
-                                  </div>
-                                  {parseFloat(item.total_linea) > 0 && (
-                                  <div className="text-right mr-3">
-                                    <p className="text-xs text-gray-400 mb-0.5">Subtotal</p>
-                                    <p className="text-sm font-bold text-emerald-600 whitespace-nowrap">
-                                      {selectedOrden.moneda} {parseFloat(item.total_linea).toLocaleString('es-GT', { minimumFractionDigits: 2 })}
-                                    </p>
-                                  </div>
-                                )}
-                                  <div className="text-xs text-gray-500">{isOpen ? "▲" : "▼"}</div>
-                                </div>
-                                <AnimatePresence initial={false}>
-                                  {isOpen && (
-                                    <motion.div
-                                      key="content"
-                                      initial={{ height: 0, opacity: 0, clipPath: "inset(0 0 100% 0)" }}
-                                      animate={{ height: "auto", opacity: 1, clipPath: "inset(0 0 0% 0)" }}
-                                      exit={{ height: 0, opacity: 0, clipPath: "inset(0 0 100% 0)" }}
-                                      transition={{ duration: 0.35, ease: "easeInOut" }}
-                                      className="px-4 pb-4"
-                                    >
-                                        <div className="grid grid-cols-2 gap-3 text-xs text-gray-600 pt-2">
+                                    <AnimatePresence initial={false}>
+                                      {isOpen && (
+                                        <motion.div
+                                        key="content"
+                                        initial={{ height: 0, opacity: 0, clipPath: "inset(0 0 100% 0)" }}
+                                        animate={{ height: "auto", opacity: 1, clipPath: "inset(0 0 0% 0)" }}
+                                        exit={{ height: 0, opacity: 0, clipPath: "inset(0 0 100% 0)" }}
+                                        transition={{ duration: 0.35, ease: "easeInOut" }}
+                                        className="px-4 pb-4"
+                                        >
+                                          <div className="grid grid-cols-2 gap-3 text-xs text-gray-600 pt-2">
                                             <div>
                                               <p className="text-[11px] text-gray-400 font-medium uppercase tracking-wide mb-1">Precio Unitario</p>
                                               <p className="font-semibold text-gray-800">
@@ -937,37 +922,88 @@ export function OrderListView({ onBack }: OrderListViewProps) {
                                                 {selectedOrden.moneda} {parseFloat(item.total_linea).toLocaleString('es-GT', { minimumFractionDigits: 2 })}
                                               </p>
                                             </div>
-                                        </div>
-                                    </motion.div>
-                                  )}
-                                </AnimatePresence>
+                                          </div>
+                                          <div className="border-t border-gray-100 mt-3 pt-1">
+                                            {renderProveedoresLinea(item.proveedores)}
+                                          </div>
+                                        </motion.div>
+                                      )}
+                                    </AnimatePresence>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          {selectedOrden.monto_total > 0 && (
+                            <div className="flex items-center justify-between bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-xl px-5 py-4 shadow-md">
+                              <div className="flex items-center gap-2 text-white">
+                                <DollarSign className="h-5 w-5 opacity-80" />
+                                <span className="text-sm font-semibold">Monto Total de la Orden</span>
                               </div>
-                            );
-                          })}
+                              <div className="text-right">
+                                <p className="text-xl font-extrabold text-white tracking-tight">
+                                  {selectedOrden.moneda}{" "}
+                                  {selectedOrden.monto_total.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                          <div>
+                            <h4 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                              <FileText className="h-4 w-4 text-[#2183AE]" />
+                              Cotización / Archivo Excel
+                            </h4>
+                            {renderCotizacionAdjunta()}
+                          </div>
+                          {!loadingAprobaciones && renderTracking()}
                         </div>
-                    </div>
-                    {selectedOrden.monto_total > 0 && (
-                      <div className="flex items-center justify-between bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-xl px-5 py-4 shadow-md">
-                        <div className="flex items-center gap-2 text-white">
-                          <DollarSign className="h-5 w-5 opacity-80" />
-                          <span className="text-sm font-semibold">Monto Total de la Orden</span>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xl font-extrabold text-white tracking-tight">
-                            {selectedOrden.moneda}{" "}
-                            {selectedOrden.monto_total.toLocaleString("es-GT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </p>
-                        </div>
-                      </div>
+                      </>
                     )}
-                      {!loadingAprobaciones && renderTracking()}
-                    </div>
-                  </>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
+        )}
       </div>
+      {imagenGrande && createPortal(
+        <AnimatePresence>
+          <motion.div
+          key="lightbox-orden-backdrop"
+          className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[200] p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={() => setImagenGrande(null)}
+          >
+            <motion.div
+            key="lightbox-orden-content"
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+            className="relative max-w-3xl max-h-[85vh]"
+            onClick={(e) => e.stopPropagation()}
+            >
+              <img
+              src={imagenGrande.url}
+              alt={imagenGrande.nombre}
+              className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain"
+              />
+              <button
+              type="button"
+              onClick={() => setImagenGrande(null)}
+              className="absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center rounded-full bg-white text-gray-600 hover:text-red-500 shadow-lg transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <p className="text-center text-white/80 text-xs mt-2">{imagenGrande.nombre}</p>
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 }

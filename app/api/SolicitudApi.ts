@@ -6,22 +6,29 @@ import {
 } from "../types/SolicitudModel";
 import { authFetch } from "../utils/auth-fetch";
 
+// Helper para no duplicar la lectura del body en cada función
+async function parseResponse(response: Response) {
+    const text = await response.text().catch(() => '');
+    let details: any;
+    try { details = JSON.parse(text); } catch {}
+    return { details, text };
+}
+
 export async function crearSolicitudCompra(formData: FormData) {
     const response = await authFetch(`/solicitud/createSolicitudCompra`, {
         method: 'POST',
         body: formData
     });
-    
-    if(!response.ok) {
-        const text = await response.text().catch(() => '');
-        let details: any;
-        try { details = JSON.parse(text); } catch {}
 
+    const { details, text } = await parseResponse(response);
+
+    if (!response.ok) {
         console.error('Error al crear la solicitud de compra: ', details || text);
-        alert(details?.error | details?.message || 'Error al crear la solicitud de compra');
+        alert(details?.error || details?.message || 'Error al crear la solicitud de compra');
+        throw new Error(details?.error || details?.message || 'Error al crear la solicitud de compra');
     }
 
-    return response.json();
+    return details;
 }
 
 export async function getSolicitudCompraAF() {
@@ -36,16 +43,14 @@ export async function getSolicitudCompraAF() {
         return [];
     }
 
-    if(!response.ok) {
-        const text = await response.text().catch(() => '');
-        let details: any;
-        try { details = JSON.parse(text); } catch {}
+    const { details, text } = await parseResponse(response);
 
+    if (!response.ok) {
         console.error('Error al obtener las solicitudes de compra para activos fijos: ', details || text);
-        alert(details?.error | details?.message || 'Error al obtener las solicitudes de compra para activos fijos');
+        throw new Error(details?.error || details?.message || 'Error al obtener las solicitudes de compra para activos fijos');
     }
 
-    return response.json();
+    return details;
 }
 
 export async function getArticulosBySolicitud(id_solicitud: string) {
@@ -56,16 +61,15 @@ export async function getArticulosBySolicitud(id_solicitud: string) {
         }
     });
 
-    if(!response.ok) {
-        const text = await response.text().catch(() => '');
-        let details: any;
-        try { details = JSON.parse(text); } catch {}
+    const { details, text } = await parseResponse(response);
 
+    if (!response.ok) {
         console.error('Error al obtener los artículos de la solicitud de compra: ', details || text);
-        alert(details?.error | details?.message || 'Error al obtener los artículos de la solicitud de compra');
+        alert(details?.error || details?.message || 'Error al obtener los artículos de la solicitud de compra');
+        throw new Error(details?.error || details?.message || 'Error al obtener los artículos de la solicitud de compra');
     }
 
-    return response.json();
+    return details;
 }
 
 export async function updateArticulosCodes(items: { id: any, codigo_articulo: string, nombre_articulo: string }[]) {
@@ -77,19 +81,17 @@ export async function updateArticulosCodes(items: { id: any, codigo_articulo: st
         body: JSON.stringify({ items })
     });
 
-    if(!response.ok) {
-        const text = await response.text().catch(() => '');
-        let details: any;
-        try { details = JSON.parse(text); } catch {}
+    const { details, text } = await parseResponse(response);
 
+    if (!response.ok) {
         console.error('Error al actualizar los artículos de la solicitud de compra: ', details || text);
-        alert(details?.error | details?.message || 'Error al actualizar los artículos de la solicitud de compra');
+        throw new Error(details?.error || details?.message || 'Error al actualizar los artículos de la solicitud de compra');
     }
 
-    return response.json();
+    return details;
 }
 
-export async function verificarArticulosSAP(items: { id: any, codigo_articulo: string } []) {
+export async function verificarArticulosSAP(items: { id: any, codigo_articulo: string }[]) {
     const response = await authFetch('/sap/verificarArticulosSAP', {
         method: 'POST',
         headers: {
@@ -98,16 +100,14 @@ export async function verificarArticulosSAP(items: { id: any, codigo_articulo: s
         body: JSON.stringify({ items })
     });
 
-    if(!response.ok) {
-        const text = await response.text().catch(() => '');
-        let details: any;
-        try { details = JSON.parse(text); } catch {}
+    const { details, text } = await parseResponse(response);
 
+    if (!response.ok) {
         console.error('Error al validar los artículos de la solicitud de compra: ', details || text);
-        alert(details?.error | details?.message || 'Error al validar los artículos de la solicitud de compra');
+        throw new Error(details?.error || details?.message || 'Error al validar los artículos de la solicitud de compra');
     }
 
-    return response.json();
+    return details;
 }
 
 export async function getSolicitudesCompraByUser(
@@ -134,22 +134,11 @@ export async function getSolicitudesCompraByUser(
     });
 
     if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        let details: any;
-
-        try {
-            details = JSON.parse(text);
-        } catch {}
+        const { details, text } = await parseResponse(response);
 
         console.error(
             'Error al obtener las solicitudes de compra para el usuario: ',
             details || text
-        );
-
-        alert(
-            details?.error ||
-            details?.message ||
-            'Error al obtener las solicitudes de compra para el usuario'
         );
 
         return {
@@ -191,23 +180,26 @@ export async function getSolicitudesCompra(
         }
     });
 
-    if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        let details: any;
+    if (response.status === 404) {
+        return {
+            data: [],
+            pagination: {
+                total: 0,
+                totalPages: 0,
+                currentPage: 1,
+                pageSize: limit,
+                hasNextPage: false,
+                hasPrevPage: false
+            }
+        };
+    }
 
-        try {
-            details = JSON.parse(text);
-        } catch {}
+    if (!response.ok) {
+        const { details, text } = await parseResponse(response);
 
         console.error(
             'Error al obtener las solicitudes de compra: ',
             details || text
-        );
-
-        alert(
-            details?.error ||
-            details?.message ||
-            'Error al obtener las solicitudes de compra'
         );
 
         return {
@@ -226,7 +218,7 @@ export async function getSolicitudesCompra(
     return response.json();
 }
 
-export async function getAprobacionSolicitud(id_solicitud: string) : Promise<VwAprobadoresSolicitudCompra []> {
+export async function getAprobacionSolicitud(id_solicitud: string): Promise<VwAprobadoresSolicitudCompra[]> {
     const response = await authFetch(`/solicitud/getAprobacionSolicitud/${id_solicitud}`, {
         method: 'GET',
         headers: {
@@ -238,16 +230,14 @@ export async function getAprobacionSolicitud(id_solicitud: string) : Promise<VwA
         return [];
     }
 
-    if(!response.ok) {
-        const text = await response.text().catch(() => '');
-        let details: any;
-        try { details = JSON.parse(text); } catch {}
+    const { details, text } = await parseResponse(response);
 
+    if (!response.ok) {
         console.error('Error al obtener las aprobaciones para la solicitud de compra: ', details || text);
-        alert(details?.error | details?.message || 'Error al obtener las aprobaciones de la solicitud de compra');
+        return [];
     }
 
-    return response.json();
+    return details;
 }
 
 export async function getSolicitudCompra(id_solicitud: string): Promise<SolicitudCompraModel> {
@@ -258,27 +248,16 @@ export async function getSolicitudCompra(id_solicitud: string): Promise<Solicitu
         }
     });
 
+    const { details, text } = await parseResponse(response);
+
     if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        let details: any;
-
-        try {
-            details = JSON.parse(text);
-        } catch {}
-
         console.error(
             'Error al obtener la solicitud de compra: ',
             details || text
         );
 
-        alert(
-            details?.error ||
-            details?.message ||
-            'Error al obtener la solicitud de compra'
-        );
-
-        return response.json();
+        throw new Error(details?.error || details?.message || 'Error al obtener la solicitud de compra');
     }
 
-    return response.json();
+    return details;
 }
