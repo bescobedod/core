@@ -36,6 +36,9 @@ import {
   getJefeInmediatoByEstrategia
 } from "../api/EstrategiaApi";
 import { getAreasByDepartamento } from "../api/AreaApi";
+import { getDepartamentos } from "../api/DepartamentoApi";
+import { DepartamentoModel } from "../types/DepartamentoModel";
+import { getUserRole } from "../utils/jwt";
 
 interface AcquisitionStrategiesProps {
   onBack: () => void;
@@ -95,6 +98,11 @@ export function AcquisitionStrategiesView({ onBack } : AcquisitionStrategiesProp
   const [selectedAprobadores, setSelectedAprobadores] = useState<Record<string, UserModel[]>>({});
   const [removedAprobadores, setRemovedAprobadores] = useState<Record<string, any[]>>({});
   const [messageModal, setMessageModal] = useState<{ title: string; message: string; type: 'success' | 'error' } | null>(null);
+  const ROLES_CON_ACCESO_TOTAL = [1];
+  const [userRole, setUserRole] = useState<number | null>(null);
+  const isAdmin = userRole !== null && ROLES_CON_ACCESO_TOTAL.includes(userRole);
+  const [departamentos, setDepartamentos] = useState<DepartamentoModel[]>([]);
+  const [selectedDepartamentoId, setSelectedDepartamentoId] = useState<string>("");
 
   const showMessageModal = (message: string, type: 'success' | 'error' = 'error', title?: string) => {
     setMessageModal({
@@ -145,18 +153,25 @@ export function AcquisitionStrategiesView({ onBack } : AcquisitionStrategiesProp
   };
 
   const fetchEstrategias = async () => {
+    if (isAdmin && !selectedDepartamentoId) {
+      setEstrategias([]);
+      setLoadingEstrategias(false);
+      return;
+    }
+
     try {
-        const data = await getEstrategias();
-        setEstrategias(data);
+      setLoadingEstrategias(true);
+      const data = await getEstrategias(isAdmin ? selectedDepartamentoId : undefined);
+      setEstrategias(data);
     } catch (err: any) {
-        if (['TOKEN_EXPIRED', 'TOKEN_INVALID', 'TOKEN_REQUIRED'].includes(err?.message)) {
-            localStorage.clear();
-            setIsAuthenticated(false);
-            return;
-        }
-        setError((err as Error).message);
+      if (['TOKEN_EXPIRED', 'TOKEN_INVALID', 'TOKEN_REQUIRED'].includes(err?.message)) {
+        localStorage.clear();
+        setIsAuthenticated(false);
+        return;
+      }
+      setError((err as Error).message);
     } finally {
-        setLoadingEstrategias(false);
+      setLoadingEstrategias(false);
     }
   }
 
@@ -191,9 +206,14 @@ export function AcquisitionStrategiesView({ onBack } : AcquisitionStrategiesProp
       return;
     }
 
+    if (isAdmin && !selectedDepartamentoId) {
+      setAreas([]);
+      return;
+    }
+
     try {
       setLoadingAreas(true);
-      const data = await getAreasByDepartamento();
+      const data = await getAreasByDepartamento(isAdmin ? selectedDepartamentoId : undefined);
       setAreas(data);
     } catch (err: any) {
       if (['TOKEN_EXPIRED', 'TOKEN_INVALID', 'TOKEN_REQUIRED'].includes(err?.message)) {
@@ -207,9 +227,33 @@ export function AcquisitionStrategiesView({ onBack } : AcquisitionStrategiesProp
     }
   }
 
+  const fetchDepartamentosAdmin = async () => {
+    try {
+        const data = await getDepartamentos();
+        setDepartamentos(data);
+    } catch (err: any) {
+        if (['TOKEN_EXPIRED', 'TOKEN_INVALID', 'TOKEN_REQUIRED'].includes(err?.message)) {
+            localStorage.clear();
+            setIsAuthenticated(false);
+            return;
+        }
+        setError((err as Error).message);
+    }
+  };
+
+  useEffect(() => {
+    setUserRole(getUserRole());
+  }, []);
+
   useEffect(() => {
     fetchEstrategias();
-  }, [])
+  }, [selectedDepartamentoId, userRole])
+
+  useEffect(() => {
+    if (isAdmin) {
+      fetchDepartamentosAdmin();
+    }
+  }, [userRole]);
 
   useEffect(() => {
     if(selectedEstrategia?.id) {
@@ -227,10 +271,16 @@ export function AcquisitionStrategiesView({ onBack } : AcquisitionStrategiesProp
       return;
     }
 
+    if (isAdmin && !selectedDepartamentoId) {
+      showMessageModal("Selecciona un departamento");
+      return;
+    }
+
     try {
       const data = await createEstrategiaByArea(
         selectedArea.id_area,
-        nuevaEstrategia
+        nuevaEstrategia,
+        isAdmin ? selectedDepartamentoId : undefined
       );
 
       await fetchEstrategias();
@@ -768,6 +818,28 @@ export function AcquisitionStrategiesView({ onBack } : AcquisitionStrategiesProp
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
+              {isAdmin && (
+                <div className="mb-3">
+                  <Label className="text-xs text-gray-600 mb-1 block">Departamento</Label>
+                  <select
+                    value={selectedDepartamentoId}
+                    onChange={(e) => {
+                      setSelectedDepartamentoId(e.target.value);
+                      setSelectedEstrategia(null);
+                      setIsCreating(false);
+                      setIsEditing(false);
+                    }}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
+                  >
+                    <option value="">Selecciona un departamento</option>
+                    {departamentos.map(dep => (
+                      <option key={dep.id_departamento} value={dep.id_departamento}>
+                        {dep.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="mb-3 p-2 bg-yellow-50 border border-yellow-200 rounded-lg">
                 <p className="text-xs text-yellow-800 flex items-center gap-1">
                   <AlertCircle className="h-3 w-3" />
@@ -899,7 +971,6 @@ export function AcquisitionStrategiesView({ onBack } : AcquisitionStrategiesProp
                         esta_activo: e.target.checked
                       }))
                     }
-                    disabled={hasActiveStrategy}
                     />
                     <Label htmlFor="isActive" className="text-sm text-gray-700 cursor-pointer">
                       Activar estrategia
@@ -1016,7 +1087,6 @@ export function AcquisitionStrategiesView({ onBack } : AcquisitionStrategiesProp
                             )
                           }
                           className="w-4 h-4 text-[#2183AE] border-gray-300 rounded focus:ring-[#2183AE]"
-                          disabled={!selectedEstrategia.esta_activo}
                         />
                         <Label htmlFor="edit-isActive" className="text-sm text-gray-700 cursor-pointer">
                           Activar estrategia

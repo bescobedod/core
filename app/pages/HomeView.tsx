@@ -18,7 +18,7 @@ import { Label } from "../ui/label";
 
 // Mapa BD.nombre_menu → Vista en tu app
 const viewMap: Record<string, string> = {
-  OrderView: "pedidos",
+  PedidosPolloView: "pedidos",
   PendingOrdersView: "gestionar-pedidos",
   HomeView: "home",
   PurchaseRequestView: "compras",
@@ -28,7 +28,10 @@ const viewMap: Record<string, string> = {
   DepartmentsView: 'departamentos',
   ExternalPersonnelView: 'personal',
   OrderListView: 'ordenes-compra',
-  TruckInspectionHistoryView: 'inspecciones-camiones'
+  TruckInspectionHistoryView: 'inspecciones-camiones',
+  RoutesPolloView: 'rutas-pollo',
+  RoutesInsumoView: 'rutas-insumo',
+  PedidosInsumosView: 'pedidos-insumo'
 };
 
 // Función para obtener el ícono desde lucide-react

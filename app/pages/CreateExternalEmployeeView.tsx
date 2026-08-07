@@ -68,8 +68,6 @@ export function CreateExternalEmployeeView({ areas, onBack, onEmployeeCreated }:
       status: 'active',
       profileImage: undefined
     };
-
-    console.log('Nuevo empleado externo:', newEmployee);
     onEmployeeCreated(newEmployee);
   };
 

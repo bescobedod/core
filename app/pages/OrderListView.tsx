@@ -32,6 +32,7 @@ import { getAprobacionSolicitud } from "../api/SolicitudApi";
 import { VwOrdenCompra, LineaOrdenProveedorModel, VwAprobadoresOrdenCompra } from "../types/OrdenModel";
 import { getOrdenesCompraByUser, getOrdenesCompra, getAprobacionOrden, getOrdenCompraDetalle } from "../api/OrdenApi";
 import { getPermiso } from "../api/MenuApi";
+import { getSafeImageSrc, getSafeLinkUrl } from '../utils/urlSafety';
 
 interface OrderListViewProps {
   onBack: () => void;
@@ -436,14 +437,14 @@ export function OrderListView({ onBack }: OrderListViewProps) {
                 : 'border-gray-200 bg-white'
             }`}
             >
-              {prov.imagen_url ? (
+              {prov.imagen_url && getSafeImageSrc(prov.imagen_url) ? (
                 <button
                 type="button"
-                onClick={() => setImagenGrande({ url: prov.imagen_url!, nombre: prov.nombre_proveedor })}
+                onClick={() => setImagenGrande({ url: getSafeImageSrc(prov.imagen_url)!, nombre: prov.nombre_proveedor })}
                 className="shrink-0 rounded-lg overflow-hidden border border-gray-200 hover:border-[#2183AE] transition-colors"
                 >
                   <img
-                  src={prov.imagen_url}
+                  src={getSafeImageSrc(prov.imagen_url)}
                   alt={prov.nombre_proveedor}
                   className="w-14 h-14 object-cover"
                   />
@@ -507,7 +508,11 @@ export function OrderListView({ onBack }: OrderListViewProps) {
         variant="outline"
         size="sm"
         className="shrink-0 border-[#2183AE] text-[#2183AE] hover:bg-[#2183AE] hover:text-white"
-        onClick={() => window.open(selectedOrden.cotizacion_url, '_blank', 'noopener,noreferrer')}
+        disabled={!getSafeLinkUrl(selectedOrden.cotizacion_url)}
+        onClick={() => {
+          const safeUrl = getSafeLinkUrl(selectedOrden.cotizacion_url);
+          if (safeUrl) window.open(safeUrl, '_blank', 'noopener,noreferrer');
+        }}
         >
           <Eye className="h-3.5 w-3.5 mr-1" />
           Ver archivo
@@ -987,7 +992,7 @@ export function OrderListView({ onBack }: OrderListViewProps) {
             onClick={(e) => e.stopPropagation()}
             >
               <img
-              src={imagenGrande.url}
+              src={getSafeImageSrc(imagenGrande.url)}
               alt={imagenGrande.nombre}
               className="max-w-full max-h-[85vh] rounded-xl shadow-2xl object-contain"
               />

@@ -211,6 +211,8 @@ export function TruckInspectionHistoryView({ onBack }: TruckInspectionHistoryVie
   const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
   const [mediaIndex, setMediaIndex] = useState(0);
   const [totalVales, setTotalVales]             = useState(0);
+  const [exportingExcel, setExportingExcel]     = useState(false);
+  const [errorExportExcel, setErrorExportExcel] = useState<string | null>(null);
   const inspeccionScore = selectedInspeccion ? getScore([
     ...(selectedInspeccion.niveles ?? []),
     ...(selectedInspeccion.chequeo_funcionamiento ?? []),
@@ -227,6 +229,13 @@ export function TruckInspectionHistoryView({ onBack }: TruckInspectionHistoryVie
   const [placaFilter, setPlacaFilter] = useState("");
   const [conductorFilter, setConductorFilter] = useState("");
   const hasActiveFilters = dateFilterType !== "all" || placaFilter.trim() !== "" || conductorFilter.trim() !== "";
+
+  const construirFiltrosActuales = () => ({
+    placa: placaFilter.trim() !== "" ? placaFilter : undefined,
+    nombre_conductor: conductorFilter.trim() !== "" ? conductorFilter : undefined,
+    inicio: dateFilterType === "single" ? singleDate : dateFilterType === "range" ? startDate : undefined,
+    fin: dateFilterType === "range" ? endDate : undefined,
+  });
 
   const fetchInspecciones = async (filters?: any) => {
     try {
@@ -253,6 +262,53 @@ export function TruckInspectionHistoryView({ onBack }: TruckInspectionHistoryVie
       setError((err as Error).message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Trae TODAS las páginas que cumplen los filtros activos (no solo la
+  // página que el usuario tiene visible), para que el Excel exportado
+  // contenga el conjunto completo de resultados de la búsqueda.
+  const fetchTodasLasInspecciones = async (): Promise<VwCamionInspeccion[]> => {
+    const filtros = construirFiltrosActuales();
+    const TAMANIO_LOTE = 100; // registros por llamada; reduce la cantidad de peticiones
+
+    const primeraRespuesta = await getInspecciones(
+      filtros.placa,
+      filtros.nombre_conductor,
+      filtros.inicio,
+      filtros.fin,
+      1,
+      TAMANIO_LOTE
+    );
+
+    let todas: VwCamionInspeccion[] = [...primeraRespuesta.data];
+    const totalPaginasReal = primeraRespuesta.pagination?.totalPages ?? 1;
+
+    for (let p = 2; p <= totalPaginasReal; p++) {
+      const respuesta = await getInspecciones(
+        filtros.placa,
+        filtros.nombre_conductor,
+        filtros.inicio,
+        filtros.fin,
+        p,
+        TAMANIO_LOTE
+      );
+      todas = todas.concat(respuesta.data);
+    }
+
+    return todas;
+  };
+
+  const handleExportarExcel = async () => {
+    setErrorExportExcel(null);
+    setExportingExcel(true);
+    try {
+      const todasLasInspecciones = await fetchTodasLasInspecciones();
+      await exportInspeccionesExcel(todasLasInspecciones, getValesCombustible);
+    } catch (err: any) {
+      setErrorExportExcel(err?.message ?? "Ocurrió un error al exportar el Excel.");
+    } finally {
+      setExportingExcel(false);
     }
   };
 
@@ -301,10 +357,7 @@ export function TruckInspectionHistoryView({ onBack }: TruckInspectionHistoryVie
     setPage(targetPage);
     setShowNoResultsModal(false);
     await fetchInspecciones({
-      placa: placaFilter.trim() !== "" ? placaFilter : undefined,
-      nombre_conductor: conductorFilter.trim() !== "" ? conductorFilter : undefined,
-      inicio: dateFilterType === "single" ? singleDate : dateFilterType === "range" ? startDate : undefined,
-      fin: dateFilterType === "range"  ? endDate : undefined,
+      ...construirFiltrosActuales(),
       page: targetPage,
     });
     setHasSearched(true);
@@ -419,22 +472,21 @@ export function TruckInspectionHistoryView({ onBack }: TruckInspectionHistoryVie
               </div>
             )}
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button onClick={() => handleSearch()} className="border border-[#2183AE] bg-[#2183AE] text-white hover:bg-white hover:text-[#2183AE] flex items-center gap-2" size="sm" disabled={(dateFilterType === "range" && (!startDate || !endDate)) || (dateFilterType === "single" && !singleDate)}>
               <Filter className="h-3 w-3" /> Buscar
             </Button>
             <Button
-            onClick={async () => {
-              await exportInspeccionesExcel(
-                inspecciones,
-                getValesCombustible
-              );
-            }}
+            onClick={handleExportarExcel}
             variant="outline"
             size="sm"
-            disabled={inspecciones.length === 0}
+            disabled={exportingExcel || inspecciones.length === 0}
             >
-              Exportar Excel
+              {exportingExcel ? (
+                <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Exportando…</>
+              ) : (
+                "Exportar Excel"
+              )}
             </Button>
             {hasActiveFilters && (
               <Button onClick={handleClearFilters} variant="outline" size="sm" className="border-gray-300 text-gray-700 hover:bg-gray-100">
@@ -452,6 +504,11 @@ export function TruckInspectionHistoryView({ onBack }: TruckInspectionHistoryVie
                 {startDate && format(new Date(startDate), "dd/MM/yyyy")}
                 {startDate && endDate && " - "}
                 {endDate && format(new Date(endDate), "dd/MM/yyyy")}
+              </span>
+            )}
+            {errorExportExcel && (
+              <span className="text-xs text-red-600 flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" /> {errorExportExcel}
               </span>
             )}
           </div>

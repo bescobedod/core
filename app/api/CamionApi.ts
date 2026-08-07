@@ -1,4 +1,4 @@
-import { InspeccionesResponse } from "../types/CamionModel";
+import { InspeccionesResponse, CamionModel } from "../types/CamionModel";
 import { authFetch } from "../utils/auth-fetch";
 
 export async function getInspecciones(
@@ -45,6 +45,27 @@ export async function getInspecciones(
                 hasPrevPage: false
             }
         };
+    }
+
+    return response.json();
+}
+
+export async function getAllCamiones(): Promise<CamionModel[]> {
+    const response = await authFetch(`/camion/getAllCamiones`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        let details: any;
+
+        try {
+            details = JSON.parse(text);
+        } catch {}
+
+        console.error('Error al obtener los camiones:', details || text);
+        return [];
     }
 
     return response.json();

@@ -1,8 +1,9 @@
 import { EstrategiaModel } from "../types/EstrategiaModel";
 import { authFetch } from "../utils/auth-fetch";
 
-export async function getEstrategias() : Promise<EstrategiaModel[]> {
-    const response = await authFetch(`/estrategia/getEstrategias`, {
+export async function getEstrategias(departamento_id?: string) : Promise<EstrategiaModel[]> {
+    const query = departamento_id ? `?departamento_id=${departamento_id}` : '';
+    const response = await authFetch(`/estrategia/getEstrategias${query}`, {
         method: 'GET',
         headers: {
             'Content-Type': 'application/json',
@@ -19,7 +20,7 @@ export async function getEstrategias() : Promise<EstrategiaModel[]> {
         try { details = JSON.parse(text); } catch {}
 
         console.error('Error al obtener las estrategias de adquisición para el departamento: ', details || text);
-        alert(`Error al obtener las estrategias de adquisición para el departamento: ${details.error}`);
+        alert(`Error al obtener las estrategias de adquisición para el departamento: ${details?.error}`);
     }
 
     return response.json();
@@ -95,13 +96,13 @@ export async function updateEstrategiaAdquisicion(payload: any) {
     return response.json();
 }
 
-export async function createEstrategiaByArea(area: string, estrategia: any) {
+export async function createEstrategiaByArea(area: string, estrategia: any, departamento_id?: string) {
     const response = await authFetch(`/estrategia/createEstrategiaByArea/${area}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify({estrategia})
+        body: JSON.stringify({ estrategia, departamento_id })
     });
 
     if(!response.ok) {
@@ -110,7 +111,7 @@ export async function createEstrategiaByArea(area: string, estrategia: any) {
         try { details = JSON.parse(text); } catch {}
 
         console.error('Error al crear estrategia de adquisición: ', details || text);
-        alert(`Error al crear estrategia de adquisición: ${details.error}`);
+        alert(`Error al crear estrategia de adquisición: ${details?.error}`);
     }
 
     return response.json();

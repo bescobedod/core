@@ -1,8 +1,9 @@
 import { AreasUsuariosModel } from "../types/AreaModel";
 import { authFetch } from "../utils/auth-fetch";
 
-export async function getAreasByDepartamento() {
-    const response = await authFetch('/area/getAreasByDepartamento', {
+export async function getAreasByDepartamento(departamento_id?: string) {
+    const query = departamento_id ? `?departamento_id=${departamento_id}` : '';
+    const response = await authFetch(`/area/getAreasByDepartamento${query}`, {
         method: 'GET',
         headers: {
             'Content-Type': 'application/json'
@@ -15,7 +16,7 @@ export async function getAreasByDepartamento() {
         try { details = JSON.parse(text); } catch {}
 
         console.error('Error al obtener areas por departamento: ', details || text);
-        alert(details?.error | details?.message || 'Error al obtener areas por departamento');
+        alert(details?.error || details?.message || 'Error al obtener areas por departamento');
     }
 
     return response.json();

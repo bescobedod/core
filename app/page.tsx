@@ -5,7 +5,7 @@ import { HomeView } from "./pages/HomeView";
 import { PendingOrdersView } from "./pages/PendingOrdersView";
 import { RegisterView } from "./pages/RegisterView";
 import { Home, LogOut, X, ChevronLeft } from "lucide-react";
-import { OrderView } from "./pages/OrderView";
+import { PedidosPolloView } from "./pages/PedidosPolloView";
 import { LoginView } from "./pages/LoginView";
 import { useMsal } from "@azure/msal-react"
 import { loginRequest } from "../authConfig";
@@ -19,6 +19,9 @@ import { ExternalPersonnelView } from "./pages/ExternalPersonnelView";
 import { UserModel } from "./types/UserModel";
 import { OrderListView } from "./pages/OrderListView";
 import { TruckInspectionHistoryView } from "./pages/TruckInspectionHistoryView";
+import { RoutesPolloView } from "./pages/RoutesPolloView";
+import { RoutesInsumoView } from "./pages/RoutesInsumoView";
+import { PedidosInsumosView } from "./pages/PedidosInsumoView";
 
 type View =
   "login"
@@ -32,7 +35,10 @@ type View =
   | "departamentos"
   | "personal"
   | "ordenes-compra"
-  | "inspecciones-camiones";
+  | "inspecciones-camiones"
+  | "rutas-pollo"
+  | "rutas-insumo"
+  | "pedidos-insumo";
 
 export default function App() {
 
@@ -280,7 +286,7 @@ export default function App() {
               </button>
             )}
             {currentView === "home" && <HomeView onNavigate={navigateTo} />}
-            {currentView === "pedidos" && <OrderView onBack={goBack} />}
+            {currentView === "pedidos" && <PedidosPolloView/>}
             {currentView === "gestionar-pedidos" && <PendingOrdersView />}
             {currentView === "compras" && <PurchaseRequestView onBack={goBack} />}
             {currentView === "asignacion-af" && <FixedAssetsAllocationView onBack={goBack} />}
@@ -290,6 +296,9 @@ export default function App() {
             {currentView === "personal" && <ExternalPersonnelView onBack={goBack}  />}
             {currentView === "ordenes-compra" && <OrderListView onBack={goBack}  />}
             {currentView === "inspecciones-camiones" && <TruckInspectionHistoryView onBack={goBack}  />}
+            {currentView === "rutas-pollo" && <RoutesPolloView/>}
+            {currentView === "rutas-insumo" && <RoutesInsumoView/>}
+            {currentView === "pedidos-insumo" && <PedidosInsumosView/>}
           </div>
         </div>
         <div className="hidden lg:block w-64 bg-white shadow-2xl border-l border-gray-200 flex-shrink-0 fixed top-[100px] right-0 bottom-0 h-[calc(100vh-80px)]">

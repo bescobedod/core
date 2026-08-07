@@ -374,7 +374,7 @@ export function PurchaseRequestView({ onBack }: PurchaseRequestProps) {
                             <PackagePlus className="h-6 w-6 text-white" />
                         </div>
                         <div>
-                            <h2 className="text-white mb-0 text-lg">Nueva Solicitud de Compra</h2>
+                            <h2 className="text-white text-lg font-semibold leading-tight">Nueva Solicitud de Compra</h2>
                             <p className="text-sm text-white/90">
                                 Agrega artículos manualmente o búscalos en el catálogo
                             </p>

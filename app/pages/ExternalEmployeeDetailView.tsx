@@ -52,7 +52,6 @@ export function ExternalEmployeeDetailView({ employee, areas, onBack }: External
   };
 
   const handleSave = () => {
-    console.log('Guardando cambios:', editedEmployee);
     setIsEditing(false);
   };
 

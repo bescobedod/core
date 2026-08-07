@@ -16,7 +16,7 @@ import {
 import { DepartamentoModel } from "../types/DepartamentoModel";
 import { AreasUsuariosModel } from "../types/AreaModel";
 import { UserModel, UserTemporalModel } from "../types/UserModel";
-import { getDepartamentos, updateDepartamento } from "../api/DepartamentoApi";
+import { getDepartamentos, createDepartamento, updateDepartamento } from "../api/DepartamentoApi";
 import { getAreasYEmpleadosByDepartamento } from "../api/AreaApi";
 import { getUsersByDepartamento2, searchUsers } from "../api/UserApi";
 
@@ -64,6 +64,13 @@ export function DepartmentsView({ onBack } : DepartmentsProps ) {
     const [jefesActualizados, setJefesActualizados] = useState<Record<string, string | null>>({});
     const [messageModal, setMessageModal] = useState<{ title: string; message: string; type: 'success' | 'error' } | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
+    const [newDepartment, setNewDepartment] = useState({
+        codigo: "",
+        nombre: "",
+        descripcion: "",
+        codigo_sap: ""
+    });
+    const [loadingCreate, setLoadingCreate] = useState(false);
 
     const showMessageModal = (message: string, type: 'success' | 'error' = 'error', title?: string) => {
         setMessageModal({
@@ -140,8 +147,35 @@ export function DepartmentsView({ onBack } : DepartmentsProps ) {
         fetchUsers();
     }, [selectedDepartamento])
 
-    const handleCreateDepartment = () => {
-        
+    const handleCreateDepartment = async () => {
+        if (!newDepartment.codigo.trim() || !newDepartment.nombre.trim() || !newDepartment.descripcion.trim() || !newDepartment.codigo_sap.trim()) {
+            showMessageModal("Código, nombre, descripción y código SAP son obligatorios");
+            return;
+        }
+
+        if (newDepartment.codigo.trim().length > 20) {
+            showMessageModal("El código no puede exceder 20 caracteres");
+            return;
+        }
+
+        try {
+            setLoadingCreate(true);
+            await createDepartamento(newDepartment);
+            await fetchDepartamentos();
+
+            setNewDepartment({ codigo: "", nombre: "", descripcion: "", codigo_sap: "" });
+            setIsCreating(false);
+            showMessageModal("Departamento creado correctamente", "success");
+        } catch (err: any) {
+            if (['TOKEN_EXPIRED', 'TOKEN_INVALID', 'TOKEN_REQUIRED'].includes(err?.message)) {
+                localStorage.clear();
+                setIsAuthenticated(false);
+                return;
+            }
+            showMessageModal(err?.message ?? "Error al crear el departamento");
+        } finally {
+            setLoadingCreate(false);
+        }
     };
 
     const handleUpdateDepartment = async () => {
@@ -414,25 +448,45 @@ export function DepartmentsView({ onBack } : DepartmentsProps ) {
                                 <h3 className="font-semibold text-gray-900 mb-4">Nuevo Departamento</h3>
                                 <div className="space-y-4">
                                     <div>
+                                        <Label className="text-sm text-gray-700 mb-1.5 block">Código *</Label>
+                                        <Input
+                                        value={newDepartment.codigo}
+                                        onChange={(e) => setNewDepartment({ ...newDepartment, codigo: e.target.value })}
+                                        placeholder="Ej: TI, RH"
+                                        maxLength={20}
+                                        />
+                                    </div>
+                                    <div>
                                         <Label className="text-sm text-gray-700 mb-1.5 block">Nombre *</Label>
                                         <Input
-                                        // value={newDepartment.name}
-                                        // onChange={(e) => setNewDepartment({ ...newDepartment, name: e.target.value })}
+                                        value={newDepartment.nombre}
+                                        onChange={(e) => setNewDepartment({ ...newDepartment, nombre: e.target.value })}
                                         placeholder="Nombre del departamento"
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label className="text-sm text-gray-700 mb-1.5 block">Código SAP *</Label>
+                                        <Input
+                                        value={newDepartment.codigo_sap}
+                                        onChange={(e) => setNewDepartment({ ...newDepartment, codigo_sap: e.target.value })}
+                                        placeholder="Código SAP del departamento"
                                         />
                                     </div>
                                     <div>
                                         <Label className="text-sm text-gray-700 mb-1.5 block">Descripción *</Label>
                                         <Textarea
-                                        // value={newDepartment.description}
-                                        // onChange={(e) => setNewDepartment({ ...newDepartment, description: e.target.value })}
+                                        value={newDepartment.descripcion}
+                                        onChange={(e) => setNewDepartment({ ...newDepartment, descripcion: e.target.value })}
                                         placeholder="Descripción del departamento"
                                         rows={3}
                                         />
                                     </div>
                                     <div className="flex gap-2 pt-4 border-t border-gray-200">
                                         <Button
-                                        onClick={() => setIsCreating(false)}
+                                        onClick={() => {
+                                            setIsCreating(false);
+                                            setNewDepartment({ codigo: "", nombre: "", descripcion: "", codigo_sap: "" });
+                                        }}
                                         variant="outline"
                                         className="flex-1 border border-gray-900 bg-gray-900 text-white hover:bg-white hover:text-gray-900"
                                         >
@@ -440,9 +494,14 @@ export function DepartmentsView({ onBack } : DepartmentsProps ) {
                                         </Button>
                                         <Button
                                         onClick={handleCreateDepartment}
+                                        disabled={loadingCreate}
                                         className="flex-1 border border-[#2183AE] bg-[#2183AE] text-white hover:bg-white hover:text-[#2183AE]"
                                         >
-                                            Crear Departamento
+                                            {loadingCreate ? (
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                            ) : (
+                                                "Crear Departamento"
+                                            )}
                                         </Button>
                                     </div>
                                 </div>

@@ -101,7 +101,7 @@ export function ExternalPersonnelView({ onBack }: ExternalPersonnelViewProps) {
                                     <div>
                                         <h2 className="text-white mb-0 text-lg">Personal Externo</h2>
                                         <p className="text-sm text-white/90">
-                                            Gestiona personal externo y áreas
+                                          Gestiona personal externo y áreas
                                         </p>
                                     </div>
                                 </div>
