@@ -19,15 +19,17 @@ import {
   Pencil,
   Check,
   Send,
+  FileText,
+  Landmark,
 } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { motion, AnimatePresence } from "motion/react";
-import { getPedidosPos, getComparativoStockInsumos, enviarTransferenciaInsumos } from "../api/PedidoPosApi";
+import { getPedidosPos, getComparativoStockInsumos, enviarTransferenciaInsumos, previsualizarTicketInsumos, firmarTicketInsumos } from "../api/PedidoPosApi";
 import { guardarAsignacionCantidades } from "../api/AsignacionApi";
-import { PedidoPosRuta, PedidoPosTienda } from "../types/PedidoPosModel";
+import { PedidoPosRutaInsumos, PedidoPosTiendaInsumos, PedidoPosDetallePedido } from "../types/PedidoPosModel";
 import { ComparativoStockItem } from "../types/StockModel";
 import { GrupoArticuloFifo } from "../types/AsignacionModel";
 import { getPilotos, getAsignacionesTransporte, asignarTransporte } from "../api/TrasporteApi";
@@ -78,39 +80,93 @@ function EstadoPedidoBadge({ estado }: { estado: string }) {
   );
 }
 
-function calcularAsignacionFifo(ruta: PedidoPosRuta, comparativo: ComparativoStockItem[]): GrupoArticuloFifo[] {
+interface TicketPreviewModalProps {
+  ticketUrl: string;
+  firmando: boolean;
+  firmado: boolean;
+  error: string | null;
+  onClose: () => void;
+  onFirmar: () => void;
+}
+
+function TicketPreviewModal({ ticketUrl, firmando, firmado, error, onClose, onFirmar }: TicketPreviewModalProps) {
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <h3 className="text-base font-semibold text-gray-900">Ticket de traslado</h3>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-400">
+            <XIcon size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 min-h-0 bg-gray-100">
+          <iframe src={ticketUrl} title="Vista previa del ticket" className="w-full h-full border-0" style={{ minHeight: "60vh" }} />
+        </div>
+
+        {firmado ? (
+          <div className="px-6 py-4 border-t border-gray-100 flex items-center gap-2 bg-green-50 shrink-0">
+            <CheckCircle2 size={16} className="text-green-600" />
+            <p className="text-sm text-green-700">Ticket firmado y enviado.</p>
+          </div>
+        ) : (
+          <div className="px-6 py-4 border-t border-gray-100 shrink-0">
+            {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
+            <div className="flex justify-end gap-2">
+              <Button onClick={onClose} variant="cancel" size="sm" disabled={firmando}>Cerrar</Button>
+              <Button onClick={onFirmar} disabled={firmando} size="sm" className="bg-green-600 text-white hover:bg-green-700">
+                {firmando ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Check size={14} className="mr-1.5" />}
+                Firmar y enviar Ticket
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function calcularAsignacionFifo(ruta: PedidoPosRutaInsumos, comparativo: ComparativoStockItem[]): GrupoArticuloFifo[] {
   const stockPorCodigo = new Map(comparativo.map(c => [c.codigo_producto, c]));
   const gruposMap = new Map<string, GrupoArticuloFifo>();
 
   for (const tienda of ruta.tiendas) {
-    for (const item of tienda.items) {
-      if (!item.codigo_producto) continue;
+    // Insumos y Activo Fijo compiten por el mismo stock de bodega "01", así
+    // que ambos pedidos de la tienda entran juntos al cálculo FIFO.
+    const pedidos = [tienda.insumos, tienda.activo_fijo].filter(
+      (p): p is PedidoPosDetallePedido => p !== null
+    );
 
-      if (!gruposMap.has(item.codigo_producto)) {
-        const stockInfo = stockPorCodigo.get(item.codigo_producto);
-        gruposMap.set(item.codigo_producto, {
+    for (const pedido of pedidos) {
+      for (const item of pedido.items) {
+        if (!item.codigo_producto) continue;
+
+        if (!gruposMap.has(item.codigo_producto)) {
+          const stockInfo = stockPorCodigo.get(item.codigo_producto);
+          gruposMap.set(item.codigo_producto, {
+            codigo_producto: item.codigo_producto,
+            descripcion_producto: item.descripcion_producto,
+            unidad_medida: item.unidad_medida,
+            stock_original: stockInfo ? stockInfo.stock_disponible : 0,
+            encontrado_en_sap: stockInfo ? stockInfo.encontrado_en_sap : false,
+            lineas: []
+          });
+        }
+
+        gruposMap.get(item.codigo_producto)!.lineas.push({
+          detalle_id: item.id,
           codigo_producto: item.codigo_producto,
           descripcion_producto: item.descripcion_producto,
           unidad_medida: item.unidad_medida,
-          stock_original: stockInfo ? stockInfo.stock_disponible : 0,
-          encontrado_en_sap: stockInfo ? stockInfo.encontrado_en_sap : false,
-          lineas: []
+          numero_pedido: pedido.numero_pedido,
+          nombre_tienda: tienda.nombre_tienda || tienda.codigo_tienda || "Tienda sin identificar",
+          fecha_pedido: pedido.fecha_pedido,
+          hora_pedido: pedido.hora_pedido,
+          cantidad_solicitada: Number(item.cantidad_solicitada),
+          cantidad_asignada: 0,
+          ajustado_manual: false,
         });
       }
-
-      gruposMap.get(item.codigo_producto)!.lineas.push({
-        detalle_id: item.id,
-        codigo_producto: item.codigo_producto,
-        descripcion_producto: item.descripcion_producto,
-        unidad_medida: item.unidad_medida,
-        numero_pedido: tienda.numero_pedido,
-        nombre_tienda: tienda.nombre_tienda || tienda.codigo_tienda || "Tienda sin identificar",
-        fecha_pedido: tienda.fecha_pedido,
-        hora_pedido: tienda.hora_pedido,
-        cantidad_solicitada: Number(item.cantidad_solicitada),
-        cantidad_asignada: 0,
-        ajustado_manual: false,
-      });
     }
   }
 
@@ -144,7 +200,7 @@ function estadoGrupoFifo(grupo: GrupoArticuloFifo): "ok" | "parcial" | "sin_stoc
 }
 
 interface TransporteSectionProps {
-  ruta: PedidoPosRuta;
+  ruta: PedidoPosRutaInsumos;
   fecha: string;
   puedeEditar: boolean;
   camiones: CamionModel[];
@@ -265,7 +321,7 @@ function TransporteSection({ ruta, fecha, puedeEditar, camiones, pilotos, asigna
           onClick={handleGuardar}
           disabled={guardando || !camionId || !pilotoId}
           size="sm"
-          className="bg-[#2183AE] text-white hover:bg-[#1a6a8f]"
+          variant="submit"
         >
           {guardando ? <Loader2 size={13} className="animate-spin mr-1" /> : <Check size={13} className="mr-1" />}
           Guardar
@@ -273,7 +329,7 @@ function TransporteSection({ ruta, fecha, puedeEditar, camiones, pilotos, asigna
         <Button
           onClick={() => setEditando(false)}
           disabled={guardando}
-          variant="outline"
+          variant="cancel"
           size="sm"
         >
           Cancelar
@@ -283,8 +339,32 @@ function TransporteSection({ ruta, fecha, puedeEditar, camiones, pilotos, asigna
   );
 }
 
-function StoreCard({ tienda }: { tienda: PedidoPosTienda }) {
+function ListaItemsPedido({ items, iconClassName }: { items: PedidoPosDetallePedido["items"]; iconClassName: string }) {
+  return (
+    <>
+      {items.map(item => (
+        <div key={item.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-gray-50">
+          <div className="flex items-start gap-3 min-w-0">
+            <Package size={14} className={`${iconClassName} mt-0.5 shrink-0`} />
+            <div className="min-w-0">
+              <p className="text-sm text-gray-800">{item.descripcion_producto}</p>
+              <p className="text-xs text-gray-400">{item.codigo_producto} · {item.unidad_medida}</p>
+            </div>
+          </div>
+          <p className="text-sm text-gray-600 tabular-nums shrink-0">{item.cantidad_solicitada}</p>
+        </div>
+      ))}
+    </>
+  );
+}
+
+function StoreCard({ tienda }: { tienda: PedidoPosTiendaInsumos }) {
   const [open, setOpen] = useState(false);
+  // Insumos es el bloque principal de la tarjeta; si la tienda solo pidió
+  // activo fijo ese día (sin insumos), el activo fijo pasa a ser el principal.
+  const principal = tienda.insumos || tienda.activo_fijo;
+
+  if (!principal) return null;
 
   return (
     <div className="border border-gray-200 rounded-xl overflow-hidden">
@@ -298,8 +378,13 @@ function StoreCard({ tienda }: { tienda: PedidoPosTienda }) {
         <span className="text-sm text-gray-700 flex-1 truncate">
           {tienda.nombre_tienda || tienda.codigo_tienda || "Tienda sin identificar"}
         </span>
-        <EstadoPedidoBadge estado={tienda.estado} />
-        <span className="text-xs text-gray-400 shrink-0">{tienda.items.length} ítems</span>
+        <EstadoPedidoBadge estado={principal.estado} />
+        <span className="text-xs text-gray-400 shrink-0">{principal.items.length} ítems</span>
+        {tienda.activo_fijo && (
+          <span className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 shrink-0">
+            <Landmark size={11} /> {tienda.insumos ? "+ Activo Fijo" : "Activo Fijo"}
+          </span>
+        )}
         {open ? <ChevronUp size={15} className="text-gray-400 shrink-0" /> : <ChevronDown size={15} className="text-gray-400 shrink-0" />}
       </button>
       <AnimatePresence>
@@ -311,20 +396,23 @@ function StoreCard({ tienda }: { tienda: PedidoPosTienda }) {
             transition={{ duration: 0.2 }}
             className="overflow-hidden bg-white"
           >
-            <div className="space-y-1.5 px-3 py-3">
-              {tienda.items.map(item => (
-                <div key={item.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-gray-50">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <Package size={14} className="text-sky-500 mt-0.5 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-sm text-gray-800">{item.descripcion_producto}</p>
-                      <p className="text-xs text-gray-400">{item.codigo_producto} · {item.unidad_medida}</p>
-                    </div>
-                  </div>
-                  <p className="text-sm text-gray-600 tabular-nums shrink-0">{item.cantidad_solicitada}</p>
+            {tienda.insumos && (
+              <div className="space-y-1.5 px-3 py-3">
+                {tienda.activo_fijo && (
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400 px-3 pb-1">Insumos</p>
+                )}
+                <ListaItemsPedido items={tienda.insumos.items} iconClassName="text-sky-500" />
+              </div>
+            )}
+            {tienda.activo_fijo && (
+              <div className="space-y-1.5 px-3 py-3 border-t border-gray-100 bg-purple-50/30">
+                <div className="flex items-center gap-2 px-3 pb-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-purple-500 flex-1">Activo Fijo</p>
+                  <EstadoPedidoBadge estado={tienda.activo_fijo.estado} />
                 </div>
-              ))}
-            </div>
+                <ListaItemsPedido items={tienda.activo_fijo.items} iconClassName="text-purple-500" />
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -404,7 +492,7 @@ function ComparativoStockModal({ comparativo, fecha, onClose }: ComparativoStock
         </div>
 
         <div className="px-6 py-3 border-t border-gray-100 flex justify-end shrink-0">
-          <Button onClick={onClose} variant="outline" size="sm">Cerrar</Button>
+          <Button onClick={onClose} variant="cancel" size="sm">Cerrar</Button>
         </div>
       </div>
     </div>
@@ -513,8 +601,8 @@ function AsignacionFifoModal({ grupos, fecha, guardando, error, onClose, onCambi
         {error && <p className="px-6 text-xs text-red-600 shrink-0">{error}</p>}
 
         <div className="px-6 py-3 border-t border-gray-100 flex justify-end gap-2 shrink-0">
-          <Button onClick={onClose} variant="outline" size="sm" disabled={guardando}>Cancelar</Button>
-          <Button onClick={onGuardar} disabled={guardando} size="sm" className="bg-[#2183AE] text-white hover:bg-[#1a6a8f]">
+          <Button onClick={onClose} variant="cancel" size="sm" disabled={guardando}>Cancelar</Button>
+          <Button onClick={onGuardar} disabled={guardando} size="sm" variant="submit">
             {guardando ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Save size={14} className="mr-1.5" />}
             Guardar asignación
           </Button>
@@ -543,10 +631,10 @@ export function PedidosInsumosView() {
   const [busquedaRealizada, setBusquedaRealizada] = useState(false);
   const [loadingBusqueda, setLoadingBusqueda] = useState(false);
   const [errorBusqueda, setErrorBusqueda] = useState<string | null>(null);
-  const [previewRuta, setPreviewRuta] = useState<PedidoPosRuta | null>(null);
+  const [previewRuta, setPreviewRuta] = useState<PedidoPosRutaInsumos | null>(null);
 
   const [rutaActual, setRutaActual] = useState<RutaInsumos | null>(null);
-  const [pedidoRuta, setPedidoRuta] = useState<PedidoPosRuta | null>(null);
+  const [pedidoRuta, setPedidoRuta] = useState<PedidoPosRutaInsumos | null>(null);
   const [loadingPedidos, setLoadingPedidos] = useState(false);
   const [errorPedidos, setErrorPedidos] = useState<string | null>(null);
 
@@ -564,6 +652,14 @@ export function PedidosInsumosView() {
 
   const [enviandoSap, setEnviandoSap] = useState(false);
   const [errorEnviarSap, setErrorEnviarSap] = useState<string | null>(null);
+
+  const [showTicketModal, setShowTicketModal] = useState(false);
+  const [ticketUrl, setTicketUrl] = useState<string | null>(null);
+  const [cargandoTicket, setCargandoTicket] = useState(false);
+  const [errorTicket, setErrorTicket] = useState<string | null>(null);
+  const [firmandoTicket, setFirmandoTicket] = useState(false);
+  const [errorFirmarTicket, setErrorFirmarTicket] = useState<string | null>(null);
+  const [ticketFirmado, setTicketFirmado] = useState(false);
 
   const [camiones, setCamiones] = useState<CamionModel[]>([]);
   const [pilotos, setPilotos] = useState<PilotoUsuario[]>([]);
@@ -797,6 +893,48 @@ export function PedidosInsumosView() {
     }
   };
 
+  const handlePrevisualizarTicket = async (rutaId: string, fecha: string) => {
+    setCargandoTicket(true);
+    setErrorTicket(null);
+    setTicketFirmado(false);
+    setErrorFirmarTicket(null);
+
+    try {
+      const url = await previsualizarTicketInsumos(rutaId, fecha);
+      setTicketUrl(url);
+      setShowTicketModal(true);
+    } catch (err) {
+      setErrorTicket(err instanceof Error ? err.message : "Error al generar el ticket");
+    } finally {
+      setCargandoTicket(false);
+    }
+  };
+
+  const handleCerrarTicketModal = () => {
+    if (ticketUrl) window.URL.revokeObjectURL(ticketUrl);
+    setTicketUrl(null);
+    setShowTicketModal(false);
+    setTicketFirmado(false);
+  };
+
+  const handleFirmarTicket = async () => {
+    const rutaId = candado?.ruta_id || rutaElegidaId;
+    const fecha = candado?.fecha || fechaElegida;
+    if (!rutaId || !fecha) return;
+
+    setFirmandoTicket(true);
+    setErrorFirmarTicket(null);
+
+    try {
+      await firmarTicketInsumos(rutaId, fecha);
+      setTicketFirmado(true);
+    } catch (err) {
+      setErrorFirmarTicket(err instanceof Error ? err.message : "Error al firmar el ticket");
+    } finally {
+      setFirmandoTicket(false);
+    }
+  };
+
   const handleAsignado = (
     rutaId: string,
     camionId: string,
@@ -862,15 +1000,12 @@ export function PedidosInsumosView() {
       </div>
 
       {!candado ? (
-        // ------------------------------------------------------------
         // Sin candado activo: elegir ruta + fecha, buscar, y solo
         // entonces poder iniciar la validación
-        // ------------------------------------------------------------
         <div className="bg-white rounded-xl shadow-md border border-gray-200 p-5">
           <h3 className="text-sm font-medium text-gray-800 mb-4 flex items-center gap-1.5">
             <Unlock size={15} className="text-gray-400" /> Elige la ruta a trabajar
           </h3>
-
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
             <div className="sm:col-span-2">
               <Label className="text-xs text-gray-700 mb-1.5 block">Ruta</Label>
@@ -894,7 +1029,7 @@ export function PedidosInsumosView() {
           <Button
             onClick={handleBuscarPreview}
             disabled={loadingBusqueda || !rutaElegidaId || !fechaElegida}
-            variant="outline"
+            variant="submit"
             size="sm"
             className="mb-4"
           >
@@ -922,9 +1057,30 @@ export function PedidosInsumosView() {
                   <span className="text-xs text-gray-400">Doc. SAP: <span className="text-gray-600 font-medium">{previewRuta.sap_docnum}</span></span>
                 )}
               </div>
+              {(previewRuta.piloto_nombre || previewRuta.camion_placa) && (
+                <div className="flex items-center gap-4 mb-3 text-xs text-gray-500">
+                  <span className="flex items-center gap-1"><User size={12} className="text-gray-400" /> {previewRuta.piloto_nombre || "Sin piloto"}</span>
+                  <span className="flex items-center gap-1"><Truck size={12} className="text-gray-400" /> {previewRuta.camion_placa || "Sin camión"}</span>
+                </div>
+              )}
+              {previewRuta.estado_general === "EN_TRANSITO" && (
+                <div className="mb-3">
+                  <Button
+                    onClick={() => handlePrevisualizarTicket(rutaElegidaId, fechaElegida)}
+                    disabled={cargandoTicket}
+                    size="sm"
+                    variant="outline"
+                    className="border-[#2183AE] text-[#2183AE] hover:bg-[#2183AE]/10"
+                  >
+                    {cargandoTicket ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <FileText size={14} className="mr-1.5" />}
+                    Ver ticket
+                  </Button>
+                  {errorTicket && <p className="text-xs text-red-600 mt-1.5">{errorTicket}</p>}
+                </div>
+              )}
               <div className="space-y-2">
                 {previewRuta.tiendas.map(tienda => (
-                  <StoreCard key={tienda.pedido_id} tienda={tienda} />
+                  <StoreCard key={tienda.codigo_tienda || `${tienda.insumos?.pedido_id}-${tienda.activo_fijo?.pedido_id}`} tienda={tienda} />
                 ))}
               </div>
             </div>
@@ -936,8 +1092,8 @@ export function PedidosInsumosView() {
 
           <Button
             onClick={handleIniciar}
-            disabled={iniciando || !busquedaRealizada || !previewRuta || previewRuta.tiendas.length === 0}
-            className="bg-[#2183AE] text-white hover:bg-[#1a6a8f]"
+            disabled={iniciando || !busquedaRealizada || !previewRuta || previewRuta.tiendas.length === 0 || previewRuta.estado_general === "EN_TRANSITO"}
+            variant="submit"
             size="sm"
           >
             {iniciando ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Lock size={14} className="mr-1.5" />}
@@ -949,9 +1105,7 @@ export function PedidosInsumosView() {
           )}
         </div>
       ) : (
-        // ------------------------------------------------------------
         // Con candado activo: trabajando la ruta
-        // ------------------------------------------------------------
         <>
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4 flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex items-center gap-2 flex-1">
@@ -967,7 +1121,7 @@ export function PedidosInsumosView() {
                 <p className="text-xs text-gray-400">Fecha requerida: {candado.fecha}</p>
               </div>
             </div>
-            <Button onClick={handleLiberar} disabled={liberando} variant="outline" size="sm" className="border-gray-300 text-gray-600 shrink-0">
+            <Button onClick={handleLiberar} disabled={liberando} variant="cancel" size="sm">
               {liberando ? <Loader2 size={13} className="animate-spin mr-1.5" /> : <Unlock size={13} className="mr-1.5" />}
               Liberar ruta
             </Button>
@@ -1035,7 +1189,7 @@ export function PedidosInsumosView() {
                     onClick={stockComparativo ? () => setShowStockModal(true) : handleCalcularStock}
                     disabled={loadingStock}
                     size="sm"
-                    className="bg-[#2183AE] text-white hover:bg-[#1a6a8f]"
+                    variant="submit"
                   >
                     {loadingStock ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Scale size={14} className="mr-1.5" />}
                     {stockComparativo ? "Ver comparativo" : "Calcular stock"}
@@ -1044,8 +1198,7 @@ export function PedidosInsumosView() {
                     <Button
                       onClick={asignacionFifo ? () => setShowFifoModal(true) : handleAbrirAsignacionFifo}
                       size="sm"
-                      variant="outline"
-                      className="border-[#2183AE] text-[#2183AE] hover:bg-[#2183AE]/10"
+                      variant="submit"
                     >
                       <ListOrdered size={14} className="mr-1.5" />
                       {asignacionFifo ? "Ver asignación" : "Asignar"}
@@ -1056,7 +1209,7 @@ export function PedidosInsumosView() {
                       onClick={handleEnviarTransferencia}
                       disabled={enviandoSap || !pedidoRuta.camion_id || !pedidoRuta.piloto_id}
                       size="sm"
-                      className="bg-green-600 text-white hover:bg-green-700"
+                      variant="success"
                     >
                       {enviandoSap ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Send size={14} className="mr-1.5" />}
                       Enviar a SAP
@@ -1079,7 +1232,7 @@ export function PedidosInsumosView() {
                 <p className="text-xs text-gray-400 mb-3">{pedidoRuta.tiendas.length} tienda{pedidoRuta.tiendas.length !== 1 ? "s" : ""}</p>
                 <div className="space-y-2.5">
                   {pedidoRuta.tiendas.map(tienda => (
-                    <StoreCard key={tienda.pedido_id} tienda={tienda} />
+                    <StoreCard key={tienda.codigo_tienda || `${tienda.insumos?.pedido_id}-${tienda.activo_fijo?.pedido_id}`} tienda={tienda} />
                   ))}
                 </div>
               </div>
@@ -1101,6 +1254,17 @@ export function PedidosInsumosView() {
           onClose={() => setShowFifoModal(false)}
           onCambiarCantidad={handleCambiarCantidadAsignada}
           onGuardar={handleGuardarAsignacionFifo}
+        />
+      )}
+
+      {showTicketModal && ticketUrl && (
+        <TicketPreviewModal
+          ticketUrl={ticketUrl}
+          firmando={firmandoTicket}
+          firmado={ticketFirmado}
+          error={errorFirmarTicket}
+          onClose={handleCerrarTicketModal}
+          onFirmar={handleFirmarTicket}
         />
       )}
     </div>

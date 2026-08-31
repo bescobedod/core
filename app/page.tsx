@@ -8,7 +8,7 @@ import { Home, LogOut, X, ChevronLeft } from "lucide-react";
 import { PedidosPolloView } from "./pages/PedidosPolloView";
 import { LoginView } from "./pages/LoginView";
 import { useMsal } from "@azure/msal-react"
-import { loginRequest } from "../authConfig";
+import { loginRequest, msalConfig } from "../authConfig";
 import { validateLogin } from "./api/LoginApi";
 import { PurchaseRequestView } from "./pages/PurchaseRequestView";
 import { FixedAssetsAllocationView } from "./pages/FixedAssetsAllocationView";
@@ -22,6 +22,12 @@ import { TruckInspectionHistoryView } from "./pages/TruckInspectionHistoryView";
 import { RoutesPolloView } from "./pages/RoutesPolloView";
 import { RoutesInsumoView } from "./pages/RoutesInsumoView";
 import { PedidosInsumosView } from "./pages/PedidosInsumoView";
+import { FixedAssetsView } from "./pages/FixedAssetsView";
+import { CamionesEnRutaPolloView } from "./pages/CamionesEnRutaPolloView";
+import { CamionesEnRutaInsumoView } from "./pages/CamionesEnRutaInsumoView";
+import { NotificacionDestinatariosView } from "./pages/NotificacionDestinatariosView";
+import { PilotoClienteSapPolloView } from "./pages/PilotoClienteSapPolloView";
+import { PilotoClienteSapInsumoView } from "./pages/PilotoClienteSapInsumoView";
 
 type View =
   "login"
@@ -38,7 +44,13 @@ type View =
   | "inspecciones-camiones"
   | "rutas-pollo"
   | "rutas-insumo"
-  | "pedidos-insumo";
+  | "pedidos-insumo"
+  | "pedidos-af"
+  | "camiones-en-ruta-pollo"
+  | "camiones-en-ruta-insumos"
+  | "destinatarios-notificacion"
+  | "piloto-cliente-sap-pollo"
+  | "piloto-cliente-sap-insumos";
 
 export default function App() {
 
@@ -217,7 +229,7 @@ export default function App() {
       localStorage.clear();
       instance.logoutRedirect({
         account: accounts[0],
-        postLogoutRedirectUri: "http://localhost:3001"
+        postLogoutRedirectUri: msalConfig.auth.postLogoutRedirectUri
       });
     } else {
       localStorage.clear();
@@ -299,6 +311,12 @@ export default function App() {
             {currentView === "rutas-pollo" && <RoutesPolloView/>}
             {currentView === "rutas-insumo" && <RoutesInsumoView/>}
             {currentView === "pedidos-insumo" && <PedidosInsumosView/>}
+            {currentView === "pedidos-af" && <FixedAssetsView onBack={goBack} />}
+            {currentView === "camiones-en-ruta-pollo" && <CamionesEnRutaPolloView />}
+            {currentView === "camiones-en-ruta-insumos" && <CamionesEnRutaInsumoView />}
+            {currentView === "destinatarios-notificacion" && <NotificacionDestinatariosView />}
+            {currentView === "piloto-cliente-sap-pollo" && <PilotoClienteSapPolloView />}
+            {currentView === "piloto-cliente-sap-insumos" && <PilotoClienteSapInsumoView />}
           </div>
         </div>
         <div className="hidden lg:block w-64 bg-white shadow-2xl border-l border-gray-200 flex-shrink-0 fixed top-[100px] right-0 bottom-0 h-[calc(100vh-80px)]">

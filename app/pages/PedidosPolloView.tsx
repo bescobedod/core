@@ -20,13 +20,14 @@ import {
   Pencil,
   Check,
   Send,
+  FileText,
 } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { motion, AnimatePresence } from "motion/react";
-import { getPedidosPos, getComparativoStockPollo, enviarTransferenciaPollo } from "../api/PedidoPosApi";
+import { getPedidosPos, getComparativoStockPollo, enviarTransferenciaPollo, previsualizarTicketPollo, firmarTicketPollo } from "../api/PedidoPosApi";
 import { guardarAsignacionCantidades } from "../api/AsignacionApi";
 import { PedidoPosRuta, PedidoPosTienda } from "../types/PedidoPosModel";
 import { ComparativoStockItem } from "../types/StockModel";
@@ -77,6 +78,52 @@ function EstadoPedidoBadge({ estado }: { estado: string }) {
     <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border ${cfg.chip}`}>
       {cfg.icon} {cfg.label}
     </span>
+  );
+}
+
+interface TicketPreviewModalProps {
+  ticketUrl: string;
+  firmando: boolean;
+  firmado: boolean;
+  error: string | null;
+  onClose: () => void;
+  onFirmar: () => void;
+}
+
+function TicketPreviewModal({ ticketUrl, firmando, firmado, error, onClose, onFirmar }: TicketPreviewModalProps) {
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <h3 className="text-base font-semibold text-gray-900">Ticket de traslado</h3>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-400">
+            <XIcon size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 min-h-0 bg-gray-100">
+          <iframe src={ticketUrl} title="Vista previa del ticket" className="w-full h-full border-0" style={{ minHeight: "60vh" }} />
+        </div>
+
+        {firmado ? (
+          <div className="px-6 py-4 border-t border-gray-100 flex items-center gap-2 bg-green-50 shrink-0">
+            <CheckCircle2 size={16} className="text-green-600" />
+            <p className="text-sm text-green-700">Ticket firmado y enviado.</p>
+          </div>
+        ) : (
+          <div className="px-6 py-4 border-t border-gray-100 shrink-0">
+            {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
+            <div className="flex justify-end gap-2">
+              <Button onClick={onClose} variant="cancel" size="sm" disabled={firmando}>Cerrar</Button>
+              <Button onClick={onFirmar} disabled={firmando} size="sm" variant="success">
+                {firmando ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Check size={14} className="mr-1.5" />}
+                Firmar y enviar Ticket
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -267,7 +314,7 @@ function TransporteSection({ ruta, fecha, puedeEditar, camiones, pilotos, asigna
           onClick={handleGuardar}
           disabled={guardando || !camionId || !pilotoId}
           size="sm"
-          className="bg-[#2183AE] text-white hover:bg-[#1a6a8f]"
+          variant="submit"
         >
           {guardando ? <Loader2 size={13} className="animate-spin mr-1" /> : <Check size={13} className="mr-1" />}
           Guardar
@@ -275,7 +322,7 @@ function TransporteSection({ ruta, fecha, puedeEditar, camiones, pilotos, asigna
         <Button
           onClick={() => setEditando(false)}
           disabled={guardando}
-          variant="outline"
+          variant="cancel"
           size="sm"
         >
           Cancelar
@@ -406,7 +453,7 @@ function ComparativoStockModal({ comparativo, fecha, onClose }: ComparativoStock
         </div>
 
         <div className="px-6 py-3 border-t border-gray-100 flex justify-end shrink-0">
-          <Button onClick={onClose} variant="outline" size="sm">Cerrar</Button>
+          <Button onClick={onClose} variant="cancel" size="sm">Cerrar</Button>
         </div>
       </div>
     </div>
@@ -515,8 +562,8 @@ function AsignacionFifoModal({ grupos, fecha, guardando, error, onClose, onCambi
         {error && <p className="px-6 text-xs text-red-600 shrink-0">{error}</p>}
 
         <div className="px-6 py-3 border-t border-gray-100 flex justify-end gap-2 shrink-0">
-          <Button onClick={onClose} variant="outline" size="sm" disabled={guardando}>Cancelar</Button>
-          <Button onClick={onGuardar} disabled={guardando} size="sm" className="bg-[#2183AE] text-white hover:bg-[#1a6a8f]">
+          <Button onClick={onClose} variant="cancel" size="sm" disabled={guardando}>Cancelar</Button>
+          <Button onClick={onGuardar} disabled={guardando} size="sm" variant="submit">
             {guardando ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Save size={14} className="mr-1.5" />}
             Guardar asignación
           </Button>
@@ -568,6 +615,14 @@ export function PedidosPolloView() {
 
   const [enviandoSap, setEnviandoSap] = useState(false);
   const [errorEnviarSap, setErrorEnviarSap] = useState<string | null>(null);
+
+  const [showTicketModal, setShowTicketModal] = useState(false);
+  const [ticketUrl, setTicketUrl] = useState<string | null>(null);
+  const [cargandoTicket, setCargandoTicket] = useState(false);
+  const [errorTicket, setErrorTicket] = useState<string | null>(null);
+  const [firmandoTicket, setFirmandoTicket] = useState(false);
+  const [errorFirmarTicket, setErrorFirmarTicket] = useState<string | null>(null);
+  const [ticketFirmado, setTicketFirmado] = useState(false);
 
   const [camiones, setCamiones] = useState<CamionModel[]>([]);
   const [pilotos, setPilotos] = useState<PilotoUsuario[]>([]);
@@ -809,6 +864,48 @@ export function PedidosPolloView() {
     }
   };
 
+  const handlePrevisualizarTicket = async (rutaId: string, fecha: string) => {
+    setCargandoTicket(true);
+    setErrorTicket(null);
+    setTicketFirmado(false);
+    setErrorFirmarTicket(null);
+
+    try {
+      const url = await previsualizarTicketPollo(rutaId, fecha);
+      setTicketUrl(url);
+      setShowTicketModal(true);
+    } catch (err) {
+      setErrorTicket(err instanceof Error ? err.message : "Error al generar el ticket");
+    } finally {
+      setCargandoTicket(false);
+    }
+  };
+
+  const handleCerrarTicketModal = () => {
+    if (ticketUrl) window.URL.revokeObjectURL(ticketUrl);
+    setTicketUrl(null);
+    setShowTicketModal(false);
+    setTicketFirmado(false);
+  };
+
+  const handleFirmarTicket = async () => {
+    const rutaId = candado?.ruta_id || rutaElegidaId;
+    const fecha = candado?.fecha || fechaElegida;
+    if (!rutaId || !fecha) return;
+
+    setFirmandoTicket(true);
+    setErrorFirmarTicket(null);
+
+    try {
+      await firmarTicketPollo(rutaId, fecha);
+      setTicketFirmado(true);
+    } catch (err) {
+      setErrorFirmarTicket(err instanceof Error ? err.message : "Error al firmar el ticket");
+    } finally {
+      setFirmandoTicket(false);
+    }
+  };
+
   const handleAsignado = (
     rutaId: string,
     camionId: string,
@@ -908,7 +1005,7 @@ export function PedidosPolloView() {
           <Button
             onClick={handleBuscarPreview}
             disabled={loadingBusqueda || !rutaElegidaId || !fechaElegida}
-            variant="outline"
+            variant="submit"
             size="sm"
             className="mb-4"
           >
@@ -936,6 +1033,26 @@ export function PedidosPolloView() {
                   <span className="text-xs text-gray-400">Doc. SAP: <span className="text-gray-600 font-medium">{previewRuta.sap_docnum}</span></span>
                 )}
               </div>
+              {(previewRuta.piloto_nombre || previewRuta.camion_placa) && (
+                <div className="flex items-center gap-4 mb-3 text-xs text-gray-500">
+                  <span className="flex items-center gap-1"><User size={12} className="text-gray-400" /> {previewRuta.piloto_nombre || "Sin piloto"}</span>
+                  <span className="flex items-center gap-1"><Truck size={12} className="text-gray-400" /> {previewRuta.camion_placa || "Sin camión"}</span>
+                </div>
+              )}
+              {previewRuta.estado_general === "EN_TRANSITO" && (
+                <div className="mb-3">
+                  <Button
+                    onClick={() => handlePrevisualizarTicket(rutaElegidaId, fechaElegida)}
+                    disabled={cargandoTicket}
+                    size="sm"
+                    variant="submit"
+                  >
+                    {cargandoTicket ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <FileText size={14} className="mr-1.5" />}
+                    Ver ticket
+                  </Button>
+                  {errorTicket && <p className="text-xs text-red-600 mt-1.5">{errorTicket}</p>}
+                </div>
+              )}
               <div className="space-y-2">
                 {previewRuta.tiendas.map(tienda => (
                   <StoreCard key={tienda.pedido_id} tienda={tienda} />
@@ -950,7 +1067,7 @@ export function PedidosPolloView() {
 
           <Button
             onClick={handleIniciar}
-            disabled={iniciando || !busquedaRealizada || !previewRuta || previewRuta.tiendas.length === 0}
+            disabled={iniciando || !busquedaRealizada || !previewRuta || previewRuta.tiendas.length === 0 || previewRuta.estado_general === "EN_TRANSITO"}
             className="bg-[#2183AE] text-white hover:bg-[#1a6a8f]"
             size="sm"
           >
@@ -981,7 +1098,12 @@ export function PedidosPolloView() {
                 <p className="text-xs text-gray-400">Fecha requerida: {candado.fecha}</p>
               </div>
             </div>
-            <Button onClick={handleLiberar} disabled={liberando} variant="outline" size="sm" className="border-gray-300 text-gray-600 shrink-0">
+            <Button onClick={handleLiberar}
+            disabled={liberando}
+            variant="cancel"
+            size="sm"
+            className="border-gray-900 bg-gray-900 text-white hover:bg-white"
+            >
               {liberando ? <Loader2 size={13} className="animate-spin mr-1.5" /> : <Unlock size={13} className="mr-1.5" />}
               Liberar ruta
             </Button>
@@ -1049,7 +1171,7 @@ export function PedidosPolloView() {
                     onClick={stockComparativo ? () => setShowStockModal(true) : handleCalcularStock}
                     disabled={loadingStock}
                     size="sm"
-                    className="bg-[#2183AE] text-white hover:bg-[#1a6a8f]"
+                    variant="submit"
                   >
                     {loadingStock ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Scale size={14} className="mr-1.5" />}
                     {stockComparativo ? "Ver comparativo" : "Calcular stock"}
@@ -1062,7 +1184,7 @@ export function PedidosPolloView() {
                       className="border-[#2183AE] text-[#2183AE] hover:bg-[#2183AE]/10"
                     >
                       <ListOrdered size={14} className="mr-1.5" />
-                      {asignacionFifo ? "Ver asignación" : "Asignar"}
+                      {asignacionFifo ? "Ver asignación" : "Asignar (FIFO)"}
                     </Button>
                   )}
                   {pedidoRuta?.estado_general === "VALIDADO" && (
@@ -1070,7 +1192,7 @@ export function PedidosPolloView() {
                       onClick={handleEnviarTransferencia}
                       disabled={enviandoSap || !pedidoRuta.camion_id || !pedidoRuta.piloto_id}
                       size="sm"
-                      className="bg-green-600 text-white hover:bg-green-700"
+                      variant="success"
                     >
                       {enviandoSap ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Send size={14} className="mr-1.5" />}
                       Enviar a SAP
@@ -1115,6 +1237,17 @@ export function PedidosPolloView() {
           onClose={() => setShowFifoModal(false)}
           onCambiarCantidad={handleCambiarCantidadAsignada}
           onGuardar={handleGuardarAsignacionFifo}
+        />
+      )}
+
+      {showTicketModal && ticketUrl && (
+        <TicketPreviewModal
+          ticketUrl={ticketUrl}
+          firmando={firmandoTicket}
+          firmado={ticketFirmado}
+          error={errorFirmarTicket}
+          onClose={handleCerrarTicketModal}
+          onFirmar={handleFirmarTicket}
         />
       )}
     </div>

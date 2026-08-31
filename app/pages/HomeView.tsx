@@ -31,7 +31,13 @@ const viewMap: Record<string, string> = {
   TruckInspectionHistoryView: 'inspecciones-camiones',
   RoutesPolloView: 'rutas-pollo',
   RoutesInsumoView: 'rutas-insumo',
-  PedidosInsumosView: 'pedidos-insumo'
+  PedidosInsumosView: 'pedidos-insumo',
+  FixedAssetsView: 'pedidos-af',
+  CamionesEnRutaPolloView: 'camiones-en-ruta-pollo',
+  CamionesEnRutaInsumoView: 'camiones-en-ruta-insumos',
+  NotificacionDestinatariosView: 'destinatarios-notificacion',
+  PilotoClienteSapPolloView: 'piloto-cliente-sap-pollo',
+  PilotoClienteSapInsumoView: 'piloto-cliente-sap-insumos'
 };
 
 // Función para obtener el ícono desde lucide-react
@@ -157,6 +163,12 @@ export function HomeView({ onNavigate }: { onNavigate: (v: any) => void;}) {
                 </button>
               );
             })}
+            {/*
+              TEMPORAL: tarjeta fija para "Camiones en Ruta" mientras esa vista
+              todavía no tiene su registro real en tbl_menu (está en fase de
+              frontend con datos mock). Quitar este bloque cuando se cree el
+              menú en base de datos y quede cubierto por el .map() de arriba.
+            */}
         </div>
       </div>
       {!actualizaInfo && (

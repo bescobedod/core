@@ -212,9 +212,10 @@ export function RoutesPolloView() {
         <Label className="text-xs text-gray-700 mb-1.5 block">Muelle</Label>
         <div className="flex gap-2">
           {MUELLES.map(m => (
-            <button
+            <Button
               key={m.whs_code}
               onClick={() => setMuelle(m.whs_code)}
+              variant="submit"
               className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
                 muelle === m.whs_code
                   ? "bg-[#2183AE] text-white border-[#2183AE]"
@@ -222,17 +223,16 @@ export function RoutesPolloView() {
               }`}
             >
               {m.nombre} <span className="text-xs opacity-70">({m.whs_code})</span>
-            </button>
+            </Button>
           ))}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        {/* Columna izquierda: lista de rutas */}
         <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-medium text-gray-800">Rutas</h3>
-            <Button size="sm" variant="outline" onClick={() => setMostrarFormRuta(v => !v)}>
+            <Button size="sm" variant="submit" onClick={() => setMostrarFormRuta(v => !v)}>
               <Plus size={14} className="mr-1" /> Nueva
             </Button>
           </div>
@@ -256,12 +256,12 @@ export function RoutesPolloView() {
                   size="sm"
                   onClick={handleCrearRuta}
                   disabled={creandoRuta || !nombreNuevaRuta.trim() || !whsDestinoNuevaRuta.trim()}
-                  className="bg-[#2183AE] text-white hover:bg-[#1a6a8f]"
+                  variant="submit"
                 >
                   {creandoRuta ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
                   Crear
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => setMostrarFormRuta(false)}>Cancelar</Button>
+                <Button size="sm" variant="cancel" onClick={() => setMostrarFormRuta(false)}>Cancelar</Button>
               </div>
             </div>
           )}
@@ -306,12 +306,12 @@ export function RoutesPolloView() {
                           size="sm"
                           onClick={e => handleGuardarEdicion(e, r.id)}
                           disabled={guardandoEdicion || !editNombreRuta.trim() || !editWhsDestino.trim()}
-                          className="bg-[#2183AE] text-white hover:bg-[#1a6a8f]"
+                          variant="submit"
                         >
                           {guardandoEdicion ? <Loader2 size={12} className="animate-spin mr-1" /> : <Check size={12} className="mr-1" />}
                           Guardar
                         </Button>
-                        <Button size="sm" variant="outline" onClick={handleCancelarEdicion}>Cancelar</Button>
+                        <Button size="sm" variant="cancel" onClick={handleCancelarEdicion}>Cancelar</Button>
                       </div>
                     </div>
                   ) : (

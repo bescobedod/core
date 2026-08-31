@@ -51,6 +51,18 @@ export async function buscarProductosPorNombre(name: string, page: number, empre
     return response.json();
 }
 
+export async function buscarActivosFijos(name: string, page: number): Promise<{ items: Item[]; total: number }> {
+    const response = await authFetch(`/sap/buscarActivosFijos?query=${encodeURIComponent(name)}&page=${page}`);
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+
+        throw new Error(errorData.details || errorData.error || "Error desconocido en el servidor");
+    }
+
+    return response.json();
+}
+
 export async function getProveedores(name: string, empresa_id: string) {
     const response = await authFetch(`/sap/getProveedores?query=${name}&empresa_id=${empresa_id}`);
 

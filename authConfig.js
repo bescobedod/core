@@ -11,12 +11,16 @@ import { LogLevel } from "@azure/msal-browser";
  * https://github.com/AzureAD/microsoft-authentication-library-for-js/blob/dev/lib/msal-browser/docs/configuration.md 
  */
 
+// Fijo por ambiente vía NEXT_PUBLIC_REDIRECT_URI (.env) en vez de hardcodeado,
+// para no romper el login de Microsoft cuando se despliega fuera de localhost.
+const redirectUri = process.env.NEXT_PUBLIC_REDIRECT_URI || "http://localhost:3001/";
+
 export const msalConfig = {
     auth: {
         clientId: "3610155a-2974-4da5-8803-6c2962059e1b",
         authority: "https://login.microsoftonline.com/0675a017-358d-4fb1-85c3-368320881e85",
-        redirectUri: "http://localhost:3001/",
-        postLogoutRedirectUri: "http://localhost:3001/",
+        redirectUri: redirectUri,
+        postLogoutRedirectUri: redirectUri,
     },
     cache: {
         cacheLocation: "localStorage", // This configures where your cache will be stored
