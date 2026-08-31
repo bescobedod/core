@@ -7,21 +7,23 @@ FROM node:20-alpine AS base
 FROM base AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
-COPY package.json package-lock.json* ./
+COPY package.json pnpm-lock.yaml ./
 
-RUN npm ci && npm cache clean --force
+RUN pnpm install --frozen-lockfile
 
 # Build stage
 FROM base AS builder
 WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN npm run build
+RUN pnpm run build
 
 # Production stage
 FROM base AS runner
