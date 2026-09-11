@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Truck, Snowflake, Warehouse, PackageCheck, Store, AlertCircle, CheckCircle2, Eye, User, Loader2, ChevronDown, ChevronUp, HelpCircle, MapPinOff } from "lucide-react";
 import { Button } from "../ui/button";
@@ -81,12 +81,18 @@ const WHS_BODEGA_CENTRAL_INSUMOS = "01";
 
 // Mismo estado que logistica.tbl_pedidos_pos_cabecera.estado en Core — solo
 // se traduce a una etiqueta/color, no se colapsa ni se reinterpreta.
+// ENTREGADO/ENTREGADO_PARCIAL los pone la app móvil cuando la TIENDA
+// confirma la recepción física — es el estado que le importa a esta vista.
+// RECIBIDO/RECIBIDO_PARCIAL es distinto: es el estado interno de Core al
+// recibir el pedido desde el archivo/middleware (antes de validarlo y
+// mandarlo a SAP) — no significa que la tienda ya lo tenga, por eso no se
+// pinta en verde aquí, para no confundirlo con una entrega confirmada.
 function formatearEstadoTienda(estado: EstadoTiendaRuta | string) {
   switch (estado) {
-    case "RECIBIDO":
-      return { label: "Recibido", className: "text-green-600" };
-    case "RECIBIDO_PARCIAL":
-      return { label: "Recibido Parcial", className: "text-amber-600" };
+    case "ENTREGADO":
+      return { label: "Entregado", className: "text-green-600" };
+    case "ENTREGADO_PARCIAL":
+      return { label: "Entregado Parcial", className: "text-amber-600" };
     case "EN_TRANSITO":
       return { label: "En Tránsito", className: "text-[#2183AE]" };
     default:
@@ -150,33 +156,77 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
   const [cargandoHistorial, setCargandoHistorial] = useState(false);
   const [errorHistorial, setErrorHistorial] = useState<string | null>(null);
 
+  const montadoRef = useRef(true);
+
   useEffect(() => {
-    let cancelado = false;
-    setCargando(true);
-    setErrorCarga(null);
+    montadoRef.current = true;
+    return () => {
+      montadoRef.current = false;
+    };
+  }, []);
+
+  // mostrarCargando=true es la carga inicial (spinner de pantalla completa,
+  // errores visibles). mostrarCargando=false es el refresco automático de
+  // GPS en segundo plano: no debe interrumpir al usuario con un spinner ni
+  // con un error si falla una vez — simplemente lo reintenta en la próxima
+  // marca de reloj.
+  const cargarRutas = useCallback((mostrarCargando: boolean) => {
+    if (mostrarCargando) {
+      setCargando(true);
+      setErrorCarga(null);
+    }
 
     // El inventario NO se trae aquí: es una consulta pesada a SAP (hasta
     // 5000 artículos por WhsCode), así que se pide bajo demanda, una sola
     // ruta a la vez, cuando se abre su detalle (ver abrirCamion).
-    getRutasActivas(tipoRuta, FECHA_PRUEBA)
+    return getRutasActivas(tipoRuta, FECHA_PRUEBA)
       .then((rutasReales) => {
-        if (cancelado) return;
+        if (!montadoRef.current) return;
 
-        setRutas(rutasReales.map((r) => construirCamionDesdeBackend(r, tipoRuta)));
+        // Se conserva inventario/tiendas/movimientos ya cargados de cada
+        // ruta (si el usuario tiene un detalle abierto, el refresco de GPS
+        // no se lo debe borrar) — solo se actualizan piloto/placa/etc. con
+        // lo que acaba de llegar del backend.
+        setRutas((prev) => {
+          const anteriorPorId = new Map(prev.map((r) => [r.id, r]));
+
+          return rutasReales.map((r) => {
+            const nuevo = construirCamionDesdeBackend(r, tipoRuta);
+            const anterior = anteriorPorId.get(nuevo.id);
+
+            return anterior
+              ? { ...nuevo, inventario: anterior.inventario, tiendas: anterior.tiendas, movimientos: anterior.movimientos }
+              : nuevo;
+          });
+        });
       })
       .catch((err) => {
-        if (!cancelado) {
-          setErrorCarga(err instanceof Error ? err.message : "Error al obtener las rutas activas");
-        }
+        if (!montadoRef.current || !mostrarCargando) return;
+        setErrorCarga(err instanceof Error ? err.message : "Error al obtener las rutas activas");
       })
       .finally(() => {
-        if (!cancelado) setCargando(false);
+        if (montadoRef.current && mostrarCargando) setCargando(false);
       });
-
-    return () => {
-      cancelado = true;
-    };
   }, [tipoRuta]);
+
+  useEffect(() => {
+    cargarRutas(true);
+  }, [cargarRutas]);
+
+  // Cada piloto actualiza su propia posición GPS cada ~30 minutos, pero de
+  // forma independiente entre pilotos (no hay una marca de reloj común: uno
+  // puede reportar a las 9:43, otro a las 10:24, etc.). Por eso Core no
+  // intenta sincronizarse con ningún horario — simplemente refresca cada 5
+  // minutos, para ir recogiendo esas actualizaciones a medida que llegan.
+  useEffect(() => {
+    const CINCO_MINUTOS_MS = 5 * 60 * 1000;
+
+    const intervalId = setInterval(() => {
+      cargarRutas(false);
+    }, CINCO_MINUTOS_MS);
+
+    return () => clearInterval(intervalId);
+  }, [cargarRutas]);
 
   const camion = useMemo(
     () => rutas.find((r) => r.id === selectedId) ?? null,
@@ -184,7 +234,7 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
   );
 
   const totalTiendasPendientes = rutas.reduce(
-    (acc, r) => acc + r.tiendas.filter((t) => t.estado !== "RECIBIDO").length,
+    (acc, r) => acc + r.tiendas.filter((t) => t.estado !== "ENTREGADO").length,
     0
   );
   const totalConInventario = rutas.filter((r) => r.inventario.some((p) => p.cantidad > 0)).length;
@@ -510,6 +560,11 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
         </span>
       </div>
 
+      <p className="mb-4 text-xs text-gray-500 flex items-center gap-1.5">
+        <HelpCircle size={13} className="shrink-0 text-gray-400" />
+        Esta vista se refresca cada 5 minutos — la posición individual de cada piloto se actualiza aproximadamente cada 30 minutos, en un momento distinto para cada uno.
+      </p>
+
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         <div
           className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 p-3 overflow-y-auto"
@@ -705,15 +760,15 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
                     </div>
                     <div className="bg-gray-50 rounded-lg px-2 py-2 text-center">
                       <p className="text-base font-semibold text-green-600">
-                        {camion.tiendas.filter((t) => t.estado === "RECIBIDO").length}
+                        {camion.tiendas.filter((t) => t.estado === "ENTREGADO").length}
                       </p>
-                      <p className="text-[10px] text-gray-500 leading-tight">Recibidas</p>
+                      <p className="text-[10px] text-gray-500 leading-tight">Entregadas</p>
                     </div>
                     <div className="bg-gray-50 rounded-lg px-2 py-2 text-center">
                       <p className="text-base font-semibold text-amber-600">
-                        {camion.tiendas.filter((t) => t.estado === "RECIBIDO_PARCIAL").length}
+                        {camion.tiendas.filter((t) => t.estado === "ENTREGADO_PARCIAL").length}
                       </p>
-                      <p className="text-[10px] text-gray-500 leading-tight">Recibidas parcial</p>
+                      <p className="text-[10px] text-gray-500 leading-tight">Entregadas parcial</p>
                     </div>
                     <div className="bg-gray-50 rounded-lg px-2 py-2 text-center">
                       <p className="text-base font-semibold text-[#2183AE]">
@@ -747,27 +802,30 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
                         ) : camion.inventario.length === 0 ? (
                           <p className="text-xs text-gray-400">Sin inventario cargado.</p>
                         ) : (
-                          <div className="border border-gray-100 rounded-lg overflow-hidden">
-                            <table className="w-full text-xs">
-                              <thead className="bg-gray-50 text-gray-500">
-                                <tr>
-                                  <th className="text-left px-3 py-2 font-medium">Código</th>
-                                  <th className="text-left px-3 py-2 font-medium">Producto</th>
-                                  <th className="text-right px-3 py-2 font-medium">Cantidad</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-gray-50">
-                                {camion.inventario.map((p) => (
-                                  <tr key={p.codigo_producto}>
-                                    <td className="px-3 py-2 text-gray-500">{p.codigo_producto}</td>
-                                    <td className="px-3 py-2 text-gray-700">{p.nombre_producto}</td>
-                                    <td className={`px-3 py-2 text-right font-medium ${p.cantidad > 0 ? "text-gray-800" : "text-gray-300"}`}>
-                                      {p.cantidad} {p.unidad_medida}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                          // Lista en vez de tabla: con nombres largos de artículo,
+                          // una tabla de columnas fijas se desborda en pantallas
+                          // angostas. Aquí cada fila apila el nombre arriba (con
+                          // salto de línea) y la cantidad abajo/a la derecha.
+                          <div className="border border-gray-100 rounded-lg overflow-hidden divide-y divide-gray-50 text-xs">
+                            {camion.inventario.map((p) => (
+                              <div
+                                key={p.codigo_producto}
+                                className="px-3 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-3"
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-gray-700 break-words">{p.nombre_producto}</p>
+                                  <p className="text-gray-400 text-[11px] font-mono">{p.codigo_producto}</p>
+                                </div>
+                                <div className={`shrink-0 sm:text-right ${p.cantidad > 0 ? "text-gray-800" : "text-gray-300"}`}>
+                                  <p className="font-medium">
+                                    {p.cantidad} {p.unidad_venta || p.unidad_medida}
+                                  </p>
+                                  <p className="text-[11px] text-gray-400">
+                                    {p.stock_libras} {p.unidad_inventario || "unid. SAP"} en existencia
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -813,7 +871,7 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
                                       const { label, className } = formatearEstadoTienda(t.estado);
                                       return (
                                         <span className={`flex items-center gap-1 text-[11px] font-medium ${className}`}>
-                                          {t.estado === "RECIBIDO" && <CheckCircle2 size={13} />}
+                                          {t.estado === "ENTREGADO" && <CheckCircle2 size={13} />}
                                           {label}
                                         </span>
                                       );
@@ -832,8 +890,8 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
                                       <div key={p.codigo_producto} className="flex items-center justify-between gap-2 text-[11px] text-gray-500">
                                         <span className="truncate">{p.nombre_producto}</span>
                                         <span className="shrink-0">
-                                          Pedido: {p.cantidad_solicitada} {p.unidad_medida} · Entregado:{" "}
-                                          {sinRecepcion ? "sin registrar" : `${p.cantidad_recibida} ${p.unidad_medida}`}
+                                          Pedido: {p.cantidad_solicitada} {p.unidad_medida} | Entregado:{" "}
+                                          {sinRecepcion ? "No" : `${p.cantidad_recibida} ${p.unidad_medida}`}
                                           {!sinRecepcion && diferencia !== 0 && (
                                             <span className="text-amber-600 font-medium"> · Diferencia: {diferencia} {p.unidad_medida}</span>
                                           )}

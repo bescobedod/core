@@ -4,7 +4,10 @@ export interface ProductoInventarioCamion {
   codigo_producto: string;
   nombre_producto: string;
   unidad_medida: string;
-  cantidad: number; // cantidad actual disponible en el WhsCode de la ruta (SAP)
+  cantidad: number; // ya convertida a la Unidad de Venta (ej. bolsas) del artículo en SAP
+  stock_libras: number; // cantidad cruda, en la Unidad de Inventario de SAP
+  unidad_venta: string | null; // nombre de la Unidad de Venta en SAP (null si no aplica conversión)
+  unidad_inventario: string | null; // nombre de la Unidad de Inventario en SAP (ej. "Libra", "Unidad")
 }
 
 export interface ProductoTiendaRuta {
@@ -18,7 +21,11 @@ export interface ProductoTiendaRuta {
 
 // Mismo valor que logistica.tbl_pedidos_pos_cabecera.estado en Core — no se
 // deriva ni se colapsa, se muestra tal cual viene del backend.
-export type EstadoTiendaRuta = "EN_TRANSITO" | "RECIBIDO" | "RECIBIDO_PARCIAL";
+// ENTREGADO/ENTREGADO_PARCIAL: la tienda confirmó la recepción (los pone la
+// app móvil). RECIBIDO es distinto — es el estado interno de Core al
+// ingerir el pedido, no algo que la tienda haya confirmado — por eso no
+// está en esta unión, aunque pueda aparecer como valor crudo excepcional.
+export type EstadoTiendaRuta = "EN_TRANSITO" | "ENTREGADO" | "ENTREGADO_PARCIAL";
 
 export interface TiendaRutaEnCurso {
   codigo_tienda: string;

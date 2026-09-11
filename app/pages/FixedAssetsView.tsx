@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   Search,
   Plus,
+  Minus,
   Trash2,
   Eye,
   Loader2,
@@ -735,18 +736,18 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
                         key={item.ItemCode}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:bg-gray-50"
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 border border-gray-100 rounded-lg hover:bg-gray-50"
                       >
-                        <div className="flex-1">
-                          <p className="text-sm font-semibold text-gray-900">{item.ItemName}</p>
-                          <p className="text-xs text-gray-500 font-mono">{item.ItemCode}</p>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 break-words">{item.ItemName}</p>
+                          <p className="text-xs text-gray-500 font-mono break-words">{item.ItemCode}</p>
                         </div>
                         <Button
                           onClick={() => handleAgregarArticulo(item)}
                           disabled={selectedArticulos.some((a) => a.article.ItemCode === item.ItemCode)}
                           size="sm"
                           variant="outline"
-                          className="border-[#2183AE] text-[#2183AE] hover:bg-[#2183AE] hover:text-white"
+                          className="border-[#2183AE] text-[#2183AE] hover:bg-[#2183AE] hover:text-white shrink-0 w-full sm:w-auto"
                         >
                           <Plus className="h-4 w-4 mr-1" /> Agregar
                         </Button>
@@ -764,30 +765,52 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
                 </h3>
                 <div className="space-y-2 mb-6">
                   {selectedArticulos.map((item) => (
-                    <div key={item.article.ItemCode} className="border border-gray-200 rounded-lg p-3 flex items-center gap-3">
+                    <div key={item.article.ItemCode} className="border border-gray-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center gap-3">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{item.article.ItemName}</p>
-                        <p className="text-xs text-gray-500 font-mono">{item.article.ItemCode}</p>
+                        <p className="text-sm font-medium text-gray-900 break-words">{item.article.ItemName}</p>
+                        <p className="text-xs text-gray-500 font-mono break-words">{item.article.ItemCode}</p>
                       </div>
-                      <div className="w-24">
-                        <Label className="text-[10px] uppercase font-bold text-gray-500">Cantidad</Label>
-                        <Input
-                          type="number"
-                          min="1"
-                          value={item.cantidad}
-                          onChange={(e) => handleUpdateCantidad(item.article.ItemCode, parseInt(e.target.value) || 1)}
-                          className="h-8 text-sm mt-1"
-                        />
+                      <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                        <div>
+                          <Label className="text-[10px] uppercase font-bold text-gray-500 block mb-1">Cantidad</Label>
+                          <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden w-fit">
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateCantidad(item.article.ItemCode, Math.max(1, item.cantidad - 1))}
+                              className="w-9 h-9 flex items-center justify-center text-gray-600 hover:bg-gray-100 active:bg-gray-200 shrink-0"
+                              aria-label="Disminuir cantidad"
+                            >
+                              <Minus className="h-4 w-4" />
+                            </button>
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min="1"
+                              value={item.cantidad}
+                              onFocus={(e) => e.target.select()}
+                              onChange={(e) => handleUpdateCantidad(item.article.ItemCode, parseInt(e.target.value) || 1)}
+                              className="w-12 h-9 text-center text-sm border-x border-gray-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateCantidad(item.article.ItemCode, item.cantidad + 1)}
+                              className="w-9 h-9 flex items-center justify-center text-gray-600 hover:bg-gray-100 active:bg-gray-200 shrink-0"
+                              aria-label="Aumentar cantidad"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          onClick={() => handleQuitarArticulo(item.article.ItemCode)}
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-500 hover:bg-red-50 shrink-0"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
-                      <Button
-                        type="button"
-                        onClick={() => handleQuitarArticulo(item.article.ItemCode)}
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-500 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
                     </div>
                   ))}
                 </div>

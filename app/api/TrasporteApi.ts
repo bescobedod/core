@@ -33,3 +33,18 @@ export async function asignarTransporte(payload: AsignarTransportePayload): Prom
         throw new Error(errorData.details || errorData.error || "Error al asignar el transporte");
     }
 }
+
+// "Trasladar Envío": cambia el piloto/camión de una ruta ya EN_TRANSITO.
+// El backend rechaza esto si algún pedido de la ruta ya fue confirmado
+// como recibido por la tienda.
+export async function trasladarPiloto(payload: AsignarTransportePayload): Promise<void> {
+    const response = await authFetch(`/pedido/trasladarPiloto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Error al trasladar el piloto");
+    }
+}

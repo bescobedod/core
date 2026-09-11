@@ -27,12 +27,12 @@ import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { motion, AnimatePresence } from "motion/react";
-import { getPedidosPos, getComparativoStockInsumos, enviarTransferenciaInsumos, previsualizarTicketInsumos, firmarTicketInsumos } from "../api/PedidoPosApi";
+import { getPedidosPos, getComparativoStockInsumos, enviarTransferenciaInsumos, previsualizarTicketInsumos, firmarTicketInsumos, previsualizarResumenRutaInsumos } from "../api/PedidoPosApi";
 import { guardarAsignacionCantidades } from "../api/AsignacionApi";
 import { PedidoPosRutaInsumos, PedidoPosTiendaInsumos, PedidoPosDetallePedido } from "../types/PedidoPosModel";
 import { ComparativoStockItem } from "../types/StockModel";
 import { GrupoArticuloFifo } from "../types/AsignacionModel";
-import { getPilotos, getAsignacionesTransporte, asignarTransporte } from "../api/TrasporteApi";
+import { getPilotos, getAsignacionesTransporte, asignarTransporte, trasladarPiloto } from "../api/TrasporteApi";
 import { getAllCamiones } from "../api/CamionApi";
 import { PilotoUsuario, AsignacionTransporte } from "../types/TransporteModel";
 import { CamionModel } from "../types/CamionModel";
@@ -121,6 +121,32 @@ function TicketPreviewModal({ ticketUrl, firmando, firmado, error, onClose, onFi
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+interface ResumenRutaPreviewModalProps {
+  url: string;
+  onClose: () => void;
+}
+
+function ResumenRutaPreviewModal({ url, onClose }: ResumenRutaPreviewModalProps) {
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <h3 className="text-base font-semibold text-gray-900">Resumen de ruta</h3>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-400">
+            <XIcon size={18} />
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 bg-gray-100">
+          <iframe src={url} title="Vista previa del resumen de ruta" className="w-full h-full border-0" style={{ minHeight: "70vh" }} />
+        </div>
+        <div className="px-6 py-3 border-t border-gray-100 flex justify-end shrink-0">
+          <Button onClick={onClose} variant="cancel" size="sm">Cerrar</Button>
+        </div>
       </div>
     </div>
   );
@@ -661,14 +687,54 @@ export function PedidosInsumosView() {
   const [errorFirmarTicket, setErrorFirmarTicket] = useState<string | null>(null);
   const [ticketFirmado, setTicketFirmado] = useState(false);
 
+  const [showResumenRutaModal, setShowResumenRutaModal] = useState(false);
+  const [resumenRutaUrl, setResumenRutaUrl] = useState<string | null>(null);
+  const [cargandoResumenRuta, setCargandoResumenRuta] = useState(false);
+  const [errorResumenRuta, setErrorResumenRuta] = useState<string | null>(null);
+
   const [camiones, setCamiones] = useState<CamionModel[]>([]);
   const [pilotos, setPilotos] = useState<PilotoUsuario[]>([]);
   const [asignacionesDelDia, setAsignacionesDelDia] = useState<AsignacionTransporte[]>([]);
+
+  const [trasladoAbierto, setTrasladoAbierto] = useState(false);
+  const [trasladoPilotoId, setTrasladoPilotoId] = useState("");
+  const [trasladoCamionId, setTrasladoCamionId] = useState("");
+  const [trasladoGuardando, setTrasladoGuardando] = useState(false);
+  const [trasladoError, setTrasladoError] = useState<string | null>(null);
 
   useEffect(() => {
     getAllCamiones().then(setCamiones).catch(() => setCamiones([]));
     getPilotos().then(setPilotos).catch(() => setPilotos([]));
   }, []);
+
+  // "Trasladar Envío": disponible mientras la ruta sigue EN_TRANSITO, sin
+  // depender del candado (ya está liberado en este punto). Reusa el mismo
+  // endpoint de trasladarPiloto que valida en el backend que ningún pedido
+  // de la ruta esté ya confirmado como recibido por la tienda.
+  const handleTrasladarPiloto = async () => {
+    if (!trasladoPilotoId || !trasladoCamionId || !rutaElegidaId || !fechaElegida) return;
+
+    setTrasladoGuardando(true);
+    setTrasladoError(null);
+
+    try {
+      await trasladarPiloto({
+        ruta_id: rutaElegidaId,
+        fecha: fechaElegida,
+        camion_id: trasladoCamionId,
+        piloto_id: Number(trasladoPilotoId),
+      });
+
+      setTrasladoAbierto(false);
+      setTrasladoPilotoId("");
+      setTrasladoCamionId("");
+      await handleBuscarPreview();
+    } catch (err) {
+      setTrasladoError(err instanceof Error ? err.message : "Error al trasladar el piloto");
+    } finally {
+      setTrasladoGuardando(false);
+    }
+  };
 
   const puedeEditarTransporte = useMemo(
     () => !!candado && candado.fecha >= todayStr,
@@ -917,6 +983,30 @@ export function PedidosInsumosView() {
     setTicketFirmado(false);
   };
 
+  // A diferencia del ticket, el resumen de ruta no exige EN_TRANSITO —
+  // funciona igual antes y después de enviar a SAP, mientras ya se haya
+  // guardado una asignación (cantidad_asignada) para la ruta.
+  const handlePrevisualizarResumenRuta = async (rutaId: string, fecha: string) => {
+    setCargandoResumenRuta(true);
+    setErrorResumenRuta(null);
+
+    try {
+      const url = await previsualizarResumenRutaInsumos(rutaId, fecha);
+      setResumenRutaUrl(url);
+      setShowResumenRutaModal(true);
+    } catch (err) {
+      setErrorResumenRuta(err instanceof Error ? err.message : "Error al generar el resumen de ruta");
+    } finally {
+      setCargandoResumenRuta(false);
+    }
+  };
+
+  const handleCerrarResumenRutaModal = () => {
+    if (resumenRutaUrl) window.URL.revokeObjectURL(resumenRutaUrl);
+    setResumenRutaUrl(null);
+    setShowResumenRutaModal(false);
+  };
+
   const handleFirmarTicket = async () => {
     const rutaId = candado?.ruta_id || rutaElegidaId;
     const fecha = candado?.fecha || fechaElegida;
@@ -1065,17 +1155,83 @@ export function PedidosInsumosView() {
               )}
               {previewRuta.estado_general === "EN_TRANSITO" && (
                 <div className="mb-3">
-                  <Button
-                    onClick={() => handlePrevisualizarTicket(rutaElegidaId, fechaElegida)}
-                    disabled={cargandoTicket}
-                    size="sm"
-                    variant="outline"
-                    className="border-[#2183AE] text-[#2183AE] hover:bg-[#2183AE]/10"
-                  >
-                    {cargandoTicket ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <FileText size={14} className="mr-1.5" />}
-                    Ver ticket
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={() => handlePrevisualizarTicket(rutaElegidaId, fechaElegida)}
+                      disabled={cargandoTicket}
+                      size="sm"
+                      variant="outline"
+                      className="border-[#2183AE] text-[#2183AE] hover:bg-[#2183AE]/10"
+                    >
+                      {cargandoTicket ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <FileText size={14} className="mr-1.5" />}
+                      Ver ticket
+                    </Button>
+                    <Button
+                      onClick={() => { setTrasladoAbierto(v => !v); setTrasladoError(null); }}
+                      size="sm"
+                      variant="outline"
+                      className="border-amber-300 text-amber-700 hover:bg-amber-50"
+                    >
+                      <Truck size={14} className="mr-1.5" />
+                      Trasladar Envío
+                    </Button>
+                    <Button
+                      onClick={() => handlePrevisualizarResumenRuta(rutaElegidaId, fechaElegida)}
+                      disabled={cargandoResumenRuta}
+                      size="sm"
+                      variant="outline"
+                    >
+                      {cargandoResumenRuta ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <FileText size={14} className="mr-1.5" />}
+                      Resumen de ruta
+                    </Button>
+                  </div>
                   {errorTicket && <p className="text-xs text-red-600 mt-1.5">{errorTicket}</p>}
+                  {errorResumenRuta && <p className="text-xs text-red-600 mt-1.5">{errorResumenRuta}</p>}
+
+                  {trasladoAbierto && (
+                    <div className="mt-3 p-3 border border-amber-200 rounded-lg bg-amber-50/50 space-y-2">
+                      <p className="text-xs font-medium text-amber-700">
+                        Cambia el piloto/camión de este envío en tránsito, sin alterar nada más.
+                      </p>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <select
+                          value={trasladoPilotoId}
+                          onChange={e => setTrasladoPilotoId(e.target.value)}
+                          className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
+                        >
+                          <option value="">Seleccionar piloto…</option>
+                          {pilotos.map(p => (
+                            <option key={p.id_users} value={p.id_users}>{nombrePiloto(p)}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={trasladoCamionId}
+                          onChange={e => setTrasladoCamionId(e.target.value)}
+                          className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
+                        >
+                          <option value="">Seleccionar camión…</option>
+                          {camiones.map(c => (
+                            <option key={c.id_camion} value={c.id_camion}>{c.placa}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {trasladoError && <p className="text-xs text-red-600">{trasladoError}</p>}
+                      <div className="flex items-center gap-2">
+                        <Button
+                          onClick={handleTrasladarPiloto}
+                          disabled={trasladoGuardando || !trasladoPilotoId || !trasladoCamionId}
+                          size="sm"
+                          variant="submit"
+                        >
+                          {trasladoGuardando ? <Loader2 size={13} className="animate-spin mr-1" /> : <Check size={13} className="mr-1" />}
+                          Guardar traslado
+                        </Button>
+                        <Button onClick={() => setTrasladoAbierto(false)} disabled={trasladoGuardando} variant="cancel" size="sm">
+                          Cancelar
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               <div className="space-y-2">
@@ -1215,8 +1371,23 @@ export function PedidosInsumosView() {
                       Enviar a SAP
                     </Button>
                   )}
+                  {pedidoRuta && pedidoRuta.estado_general !== "RECIBIDO" && (
+                    <Button
+                      onClick={() => handlePrevisualizarResumenRuta(candado?.ruta_id || rutaElegidaId, candado?.fecha || fechaElegida)}
+                      disabled={cargandoResumenRuta}
+                      size="sm"
+                      variant="outline"
+                    >
+                      {cargandoResumenRuta ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <FileText size={14} className="mr-1.5" />}
+                      Resumen de ruta
+                    </Button>
+                  )}
                 </div>
               </div>
+
+              {errorResumenRuta && (
+                <p className="text-xs text-red-600 mb-4 flex items-center gap-1"><AlertCircle size={12} /> {errorResumenRuta}</p>
+              )}
 
               {pedidoRuta?.estado_general === "VALIDADO" && (!pedidoRuta.camion_id || !pedidoRuta.piloto_id) && (
                 <p className="text-xs text-amber-600 mb-4 flex items-center gap-1">
@@ -1266,6 +1437,10 @@ export function PedidosInsumosView() {
           onClose={handleCerrarTicketModal}
           onFirmar={handleFirmarTicket}
         />
+      )}
+
+      {showResumenRutaModal && resumenRutaUrl && (
+        <ResumenRutaPreviewModal url={resumenRutaUrl} onClose={handleCerrarResumenRutaModal} />
       )}
     </div>
   );

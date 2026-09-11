@@ -16,7 +16,6 @@ import {
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 
-// Mapa BD.nombre_menu → Vista en tu app
 const viewMap: Record<string, string> = {
   PedidosPolloView: "pedidos",
   PendingOrdersView: "gestionar-pedidos",
@@ -37,10 +36,11 @@ const viewMap: Record<string, string> = {
   CamionesEnRutaInsumoView: 'camiones-en-ruta-insumos',
   NotificacionDestinatariosView: 'destinatarios-notificacion',
   PilotoClienteSapPolloView: 'piloto-cliente-sap-pollo',
-  PilotoClienteSapInsumoView: 'piloto-cliente-sap-insumos'
+  PilotoClienteSapInsumoView: 'piloto-cliente-sap-insumos',
+  MenuPermisosView: 'menu-permisos',
+  UsuarioMuellePolloView: 'usuario-muelle-pollo'
 };
 
-// Función para obtener el ícono desde lucide-react
 function getIcon(name: string) {
   if (name in Icons) {
     // @ts-expect-error clave dinámica
@@ -140,35 +140,28 @@ export function HomeView({ onNavigate }: { onNavigate: (v: any) => void;}) {
           </p>
         </div>
         <div className="flex flex-wrap justify-center gap-6 sm:gap-8">
-            {menus
-            .filter(m => m.visible)
-            .map(m => {
-              const Icon = getIcon(m.icono);
-              const view = viewMap[m.nombre_menu ?? ""] ?? "home";
-              return (
-                <button
-                  key={m.id_menu}
-                  onClick={() => onNavigate(view)}
-                  className="group bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-gray-200 hover:shadow-2xl hover:border-[#2183AE] transition-all duration-300 transform hover:-translate-y-1 w-full sm:w-[calc(50%-1rem)]"
-                >
-                  <div className="flex flex-col items-center text-center">
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-[#2183AE] to-[#1a6a8f] rounded-2xl flex items-center justify-center mb-4 sm:mb-6 group-hover:scale-110 transition-transform duration-300">
-                      <Icon className="w-8 h-8 sm:w-10 sm:h-10 text-gray-900" />
-                    </div>
-                    <h2 className="text-gray-900 mb-2 sm:mb-3">{m.nombre}</h2>
-                    <p className="text-gray-600 text-sm sm:text-base">
-                      {m.descripcion}
-                    </p>
+          {menus.filter(m => m.visible).map(m => {
+            const Icon = getIcon(m.icono);
+            const view = viewMap[m.nombre_menu ?? ""] ?? "home";
+            
+            return (
+              <button
+              key={m.id_menu}
+              onClick={() => onNavigate(view)}
+              className="group bg-white rounded-2xl p-6 sm:p-8 shadow-xl border border-gray-200 hover:shadow-2xl hover:border-[#2183AE] transition-all duration-300 transform hover:-translate-y-1 w-full sm:w-[calc(50%-1rem)]"
+              >
+                <div className="flex flex-col items-center text-center">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-[#2183AE] to-[#1a6a8f] rounded-2xl flex items-center justify-center mb-4 sm:mb-6 group-hover:scale-110 transition-transform duration-300">
+                    <Icon className="w-8 h-8 sm:w-10 sm:h-10 text-gray-900" />
                   </div>
-                </button>
-              );
-            })}
-            {/*
-              TEMPORAL: tarjeta fija para "Camiones en Ruta" mientras esa vista
-              todavía no tiene su registro real en tbl_menu (está en fase de
-              frontend con datos mock). Quitar este bloque cuando se cree el
-              menú en base de datos y quede cubierto por el .map() de arriba.
-            */}
+                  <h2 className="text-gray-900 mb-2 sm:mb-3">{m.nombre}</h2>
+                  <p className="text-gray-600 text-sm sm:text-base">
+                    {m.descripcion}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
       {!actualizaInfo && (

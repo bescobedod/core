@@ -32,7 +32,7 @@ import { guardarAsignacionCantidades } from "../api/AsignacionApi";
 import { PedidoPosRuta, PedidoPosTienda } from "../types/PedidoPosModel";
 import { ComparativoStockItem } from "../types/StockModel";
 import { GrupoArticuloFifo } from "../types/AsignacionModel";
-import { getPilotos, getAsignacionesTransporte, asignarTransporte } from "../api/TrasporteApi";
+import { getPilotos, getAsignacionesTransporte, asignarTransporte, trasladarPiloto } from "../api/TrasporteApi";
 import { getAllCamiones } from "../api/CamionApi";
 import { PilotoUsuario, AsignacionTransporte } from "../types/TransporteModel";
 import { CamionModel } from "../types/CamionModel";
@@ -628,10 +628,45 @@ export function PedidosPolloView() {
   const [pilotos, setPilotos] = useState<PilotoUsuario[]>([]);
   const [asignacionesDelDia, setAsignacionesDelDia] = useState<AsignacionTransporte[]>([]);
 
+  const [trasladoAbierto, setTrasladoAbierto] = useState(false);
+  const [trasladoPilotoId, setTrasladoPilotoId] = useState("");
+  const [trasladoCamionId, setTrasladoCamionId] = useState("");
+  const [trasladoGuardando, setTrasladoGuardando] = useState(false);
+  const [trasladoError, setTrasladoError] = useState<string | null>(null);
+
   useEffect(() => {
     getAllCamiones().then(setCamiones).catch(() => setCamiones([]));
     getPilotos().then(setPilotos).catch(() => setPilotos([]));
   }, []);
+
+  // "Trasladar Envío": disponible mientras la ruta sigue EN_TRANSITO, sin
+  // depender del candado (ya está liberado en este punto). Reusa el mismo
+  // endpoint de trasladarPiloto que valida en el backend que ningún pedido
+  // de la ruta esté ya confirmado como recibido por la tienda.
+  const handleTrasladarPiloto = async () => {
+    if (!trasladoPilotoId || !trasladoCamionId || !rutaElegidaId || !fechaElegida) return;
+
+    setTrasladoGuardando(true);
+    setTrasladoError(null);
+
+    try {
+      await trasladarPiloto({
+        ruta_id: rutaElegidaId,
+        fecha: fechaElegida,
+        camion_id: trasladoCamionId,
+        piloto_id: Number(trasladoPilotoId),
+      });
+
+      setTrasladoAbierto(false);
+      setTrasladoPilotoId("");
+      setTrasladoCamionId("");
+      await handleBuscarPreview();
+    } catch (err) {
+      setTrasladoError(err instanceof Error ? err.message : "Error al trasladar el piloto");
+    } finally {
+      setTrasladoGuardando(false);
+    }
+  };
 
   const puedeEditarTransporte = useMemo(
     () => !!candado && candado.fecha >= todayStr,
@@ -1041,16 +1076,71 @@ export function PedidosPolloView() {
               )}
               {previewRuta.estado_general === "EN_TRANSITO" && (
                 <div className="mb-3">
-                  <Button
-                    onClick={() => handlePrevisualizarTicket(rutaElegidaId, fechaElegida)}
-                    disabled={cargandoTicket}
-                    size="sm"
-                    variant="submit"
-                  >
-                    {cargandoTicket ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <FileText size={14} className="mr-1.5" />}
-                    Ver ticket
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={() => handlePrevisualizarTicket(rutaElegidaId, fechaElegida)}
+                      disabled={cargandoTicket}
+                      size="sm"
+                      variant="submit"
+                    >
+                      {cargandoTicket ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <FileText size={14} className="mr-1.5" />}
+                      Ver ticket
+                    </Button>
+                    <Button
+                      onClick={() => { setTrasladoAbierto(v => !v); setTrasladoError(null); }}
+                      size="sm"
+                      variant="alert"
+                    >
+                      <Truck size={14} className="mr-1.5" />
+                      Trasladar Envío
+                    </Button>
+                  </div>
                   {errorTicket && <p className="text-xs text-red-600 mt-1.5">{errorTicket}</p>}
+
+                  {trasladoAbierto && (
+                    <div className="mt-3 p-3 border border-yellow-600 rounded-lg bg-amber-50/50 space-y-2">
+                      <p className="text-xs font-medium text-amber-700">
+                        Cambia el piloto/camión de este envío en tránsito, sin alterar nada más.
+                      </p>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <select
+                          value={trasladoPilotoId}
+                          onChange={e => setTrasladoPilotoId(e.target.value)}
+                          className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
+                        >
+                          <option value="">Seleccionar piloto…</option>
+                          {pilotos.map(p => (
+                            <option key={p.id_users} value={p.id_users}>{nombrePiloto(p)}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={trasladoCamionId}
+                          onChange={e => setTrasladoCamionId(e.target.value)}
+                          className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
+                        >
+                          <option value="">Seleccionar camión…</option>
+                          {camiones.map(c => (
+                            <option key={c.id_camion} value={c.id_camion}>{c.placa}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {trasladoError && <p className="text-xs text-red-600">{trasladoError}</p>}
+                      <div className="flex items-center gap-2">
+                        <Button
+                          onClick={handleTrasladarPiloto}
+                          disabled={trasladoGuardando || !trasladoPilotoId || !trasladoCamionId}
+                          size="sm"
+                          variant="submit"
+                        >
+                          {trasladoGuardando ? <Loader2 size={13} className="animate-spin mr-1" /> : <Check size={13} className="mr-1" />}
+                          Guardar traslado
+                        </Button>
+                        <Button onClick={() => setTrasladoAbierto(false)} disabled={trasladoGuardando} variant="cancel" size="sm">
+                          Cancelar
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               <div className="space-y-2">

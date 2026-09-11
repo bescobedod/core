@@ -5,4 +5,11 @@ export interface MenuModel {
     nombre_menu: string;
     descripcion: string;
     visible: boolean;
+    tipo?: string;
+}
+
+export interface MenuRolAsignacion {
+    id_menu_rol: number;
+    id_rol_core: number;
+    nombre_rol: string | null;
 }

@@ -241,6 +241,17 @@ export async function previsualizarTicketInsumos(rutaId: string, fecha: string):
     return window.URL.createObjectURL(blob);
 }
 
+export async function previsualizarResumenRutaInsumos(rutaId: string, fecha: string): Promise<string> {
+    const params = new URLSearchParams({ ruta_id: rutaId, fecha });
+    const response = await authFetch(`/pedido/generarResumenRutaInsumos?${params.toString()}`);
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Error al generar el resumen de ruta");
+    }
+    const blob = await response.blob();
+    return window.URL.createObjectURL(blob);
+}
+
 export interface FirmarTicketResponse {
     success: boolean;
     ticket_id: string;

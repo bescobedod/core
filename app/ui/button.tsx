@@ -25,6 +25,8 @@ const buttonVariants = cva(
           "border border-gray-900 bg-gray-900 text-white hover:bg-white hover:text-gray-900",
         success:
           "border border-green-600 bg-green-600 text-white hover:bg-white hover:text-green-600",
+        alert:
+          "border border-yellow-900 bg-yellow-900 text-white hover:bg-white hover:text-yellow-900"
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",
