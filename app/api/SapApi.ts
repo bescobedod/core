@@ -1,4 +1,4 @@
-import { SupplySAPCategory, ItemGroups, Item } from '../types/SapModels';
+import { SupplySAPCategory, ItemGroups, Item, ActivoFijoCategoria } from '../types/SapModels';
 import { authFetch } from '../utils/auth-fetch';
 
 const BASIC_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -58,6 +58,18 @@ export async function buscarActivosFijos(name: string, page: number): Promise<{ 
         const errorData = await response.json().catch(() => ({}));
 
         throw new Error(errorData.details || errorData.error || "Error desconocido en el servidor");
+    }
+
+    return response.json();
+}
+
+export async function listarActivosFijos(): Promise<{ categorias: ActivoFijoCategoria[] }> {
+    const response = await authFetch(`/sap/listarActivosFijos`);
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+
+        throw new Error(errorData.details || errorData.error || "Error al cargar el catálogo de activos fijos");
     }
 
     return response.json();

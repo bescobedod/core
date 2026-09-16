@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
+import { format } from "date-fns";
 import { Truck, Snowflake, Warehouse, PackageCheck, Store, AlertCircle, CheckCircle2, Eye, User, Loader2, ChevronDown, ChevronUp, HelpCircle, MapPinOff } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -32,10 +33,6 @@ import {
   TrasladoCuartoFrio,
 } from "../types/CamionRutaModel";
 
-// Arma un CamionEnRuta 100% a partir del backend — sin datos de ejemplo.
-// Inventario y tiendas arrancan vacíos porque se consultan bajo demanda al
-// abrir el detalle (ver abrirCamion); GPS puede venir null si el piloto
-// todavía no reporta ninguna posición.
 function construirCamionDesdeBackend(real: RutaActivaBackend, tipoRuta: TipoRuta): CamionEnRuta {
   return {
     id: real.ruta_id,
@@ -69,24 +66,12 @@ const CamionesEnRutaMap = dynamic(() => import("./CamionesEnRutaMap"), {
 
 type Accion = "traslado" | "entrega" | null;
 
-// TEMPORAL: fecha fija para pruebas mientras se valida la conexión al
-// backend. Quitar este valor (y volver a llamar getRutasActivas sin fecha,
-// para que use el día de hoy) antes de pasar a producción.
-const FECHA_PRUEBA = "2026-08-09";
+function fechaHoy(): string {
+  return format(new Date(), "yyyy-MM-dd");
+}
 
-// Insumos no tiene cuartos fríos: el traslado siempre va a la bodega
-// central fija "01" (sin dropdown ni consulta a SAP para elegirla). Pollo
-// sí elige entre bodegas "CFR-..." vía el dropdown normal.
 const WHS_BODEGA_CENTRAL_INSUMOS = "01";
 
-// Mismo estado que logistica.tbl_pedidos_pos_cabecera.estado en Core — solo
-// se traduce a una etiqueta/color, no se colapsa ni se reinterpreta.
-// ENTREGADO/ENTREGADO_PARCIAL los pone la app móvil cuando la TIENDA
-// confirma la recepción física — es el estado que le importa a esta vista.
-// RECIBIDO/RECIBIDO_PARCIAL es distinto: es el estado interno de Core al
-// recibir el pedido desde el archivo/middleware (antes de validarlo y
-// mandarlo a SAP) — no significa que la tienda ya lo tenga, por eso no se
-// pinta en verde aquí, para no confundirlo con una entrega confirmada.
 function formatearEstadoTienda(estado: EstadoTiendaRuta | string) {
   switch (estado) {
     case "ENTREGADO":
@@ -115,16 +100,6 @@ interface CamionesEnRutaBaseProps {
   subtitulo: string;
 }
 
-// Componente base compartido: un usuario solo puede ver rutas de Pollo o de
-// Insumos, nunca ambas a la vez, por eso hay dos vistas delgadas
-// (CamionesEnRutaPolloView / CamionesEnRutaInsumoView) que reutilizan esta
-// implementación filtrando por tipoRuta.
-//
-// "Trasladar a Cuarto Frío" y "Entregar Producto" ocurren cuando el camión
-// ya volvió a la bodega: ambos operan sobre el TOTAL de inventario del
-// camión (el WhsCode de la ruta), no sobre lo pendiente de una tienda en
-// particular. El detalle por tienda (pedido vs. entregado) es solo
-// informativo y no se modifica desde estos dos botones.
 export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRutaBaseProps) {
   const [rutas, setRutas] = useState<CamionEnRuta[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -165,28 +140,16 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
     };
   }, []);
 
-  // mostrarCargando=true es la carga inicial (spinner de pantalla completa,
-  // errores visibles). mostrarCargando=false es el refresco automático de
-  // GPS en segundo plano: no debe interrumpir al usuario con un spinner ni
-  // con un error si falla una vez — simplemente lo reintenta en la próxima
-  // marca de reloj.
   const cargarRutas = useCallback((mostrarCargando: boolean) => {
     if (mostrarCargando) {
       setCargando(true);
       setErrorCarga(null);
     }
 
-    // El inventario NO se trae aquí: es una consulta pesada a SAP (hasta
-    // 5000 artículos por WhsCode), así que se pide bajo demanda, una sola
-    // ruta a la vez, cuando se abre su detalle (ver abrirCamion).
-    return getRutasActivas(tipoRuta, FECHA_PRUEBA)
+    return getRutasActivas(tipoRuta, fechaHoy())
       .then((rutasReales) => {
         if (!montadoRef.current) return;
 
-        // Se conserva inventario/tiendas/movimientos ya cargados de cada
-        // ruta (si el usuario tiene un detalle abierto, el refresco de GPS
-        // no se lo debe borrar) — solo se actualizan piloto/placa/etc. con
-        // lo que acaba de llegar del backend.
         setRutas((prev) => {
           const anteriorPorId = new Map(prev.map((r) => [r.id, r]));
 
@@ -213,11 +176,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
     cargarRutas(true);
   }, [cargarRutas]);
 
-  // Cada piloto actualiza su propia posición GPS cada ~30 minutos, pero de
-  // forma independiente entre pilotos (no hay una marca de reloj común: uno
-  // puede reportar a las 9:43, otro a las 10:24, etc.). Por eso Core no
-  // intenta sincronizarse con ningún horario — simplemente refresca cada 5
-  // minutos, para ir recogiendo esas actualizaciones a medida que llegan.
   useEffect(() => {
     const CINCO_MINUTOS_MS = 5 * 60 * 1000;
 
@@ -252,9 +210,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
     setResultadoAccion(null);
   };
 
-  // Al abrir el detalle de una ruta se consulta el inventario real de SAP
-  // y el detalle por tienda de Core — ninguno de los dos se trae de
-  // antemano al entrar a la vista, solo cuando se abre esa ruta puntual.
   const abrirCamion = (id: string) => {
     setSelectedId(id);
     setAccion(null);
@@ -262,7 +217,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
     setErrorAccion(null);
     setErrorInventario(null);
     setErrorTiendas(null);
-    // Todo arranca comprimido cada vez que se abre un camión.
     setInventarioExpandido(false);
     setTiendasExpandidas({});
 
@@ -271,7 +225,7 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
 
     setCargandoInventario(true);
 
-    getInventarioCamion(tipoRuta, ruta.id, ruta.whs_code_ruta, FECHA_PRUEBA)
+    getInventarioCamion(tipoRuta, ruta.id, ruta.whs_code_ruta, fechaHoy())
       .then((inventario) => {
         setRutas((prev) => prev.map((r) => (r.id === id ? { ...r, inventario } : r)));
       })
@@ -288,7 +242,7 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
 
     setCargandoTiendas(true);
 
-    getDetalleTiendas(tipoRuta, ruta.id, FECHA_PRUEBA)
+    getDetalleTiendas(tipoRuta, ruta.id, fechaHoy())
       .then((tiendas) => {
         setRutas((prev) => prev.map((r) => (r.id === id ? { ...r, tiendas } : r)));
       })
@@ -312,8 +266,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
     setTiendasExpandidas((prev) => ({ ...prev, [codigoTienda]: !prev[codigoTienda] }));
   };
 
-  // El historial se consulta a SAP/Core solo cuando se expande la sección,
-  // y se refresca cada vez que se abre (por si se hizo un traslado nuevo).
   const toggleHistorial = (abierto: boolean) => {
     setHistorialExpandido(abierto);
     if (!abierto) return;
@@ -321,7 +273,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
     setCargandoHistorial(true);
     setErrorHistorial(null);
 
-    // Sin fecha: se quiere ver TODO el historial, no solo el día de prueba.
     getTrasladosCuartoFrio(tipoRuta)
       .then(setHistorial)
       .catch((err) => {
@@ -332,9 +283,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
       });
   };
 
-  // Resalta el camión en el mapa (vuela hacia él + una animación de pulso
-  // breve) sin abrir el detalle. El resaltado se limpia solo, coincidiendo
-  // con la duración de la animación definida en globals.css.
   const resaltarCamion = (id: string) => {
     setHighlightedId(id);
     setTimeout(() => {
@@ -342,10 +290,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
     }, 2700);
   };
 
-  // Ambos botones parten del mismo inventario total del camión, por eso
-  // comparten la misma inicialización y la misma validación al confirmar.
-  // Solo "traslado" necesita además el dropdown de bodegas de cuarto frío,
-  // que se consulta a SAP recién aquí (no antes) y solo para ese botón.
   const iniciarAccion = (tipo: Exclude<Accion, null>) => {
     if (!camion) return;
     const iniciales: Record<string, string> = {};
@@ -359,8 +303,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
 
     if (tipo === "traslado") {
       if (tipoRuta === "INSUMOS") {
-        // Sin cuartos fríos en insumos: el destino siempre es la bodega
-        // central "01", no hay nada que elegir ni que consultar a SAP.
         setBodegasCuartoFrio([]);
         setErrorBodegas(null);
         setCargandoBodegas(false);
@@ -423,9 +365,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
       return;
     }
 
-    // Solo actualiza el inventario/movimientos en pantalla — no cierra el
-    // formulario, porque para "traslado" primero se muestra la confirmación
-    // con el número de documento SAP (ver resultadoAccion).
     const aplicarInventarioLocal = () => {
       const movimiento: MovimientoInventarioLog = {
         id: `mov-${Date.now()}`,
@@ -458,7 +397,7 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
         tipo: tipoRuta,
         ruta_id: camion.id,
         nombre_ruta: camion.nombre_ruta,
-        fecha: FECHA_PRUEBA,
+        fecha: fechaHoy(),
         whs_origen: camion.whs_code_ruta,
         whs_destino: bodegaSeleccionada,
         camion_placa: camion.camion_placa,
@@ -484,9 +423,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
       return;
     }
 
-    // "Entregar Producto": primero crea la entrega (Deliveries) en SAP con
-    // el piloto como cliente; solo si eso sale bien se manda el correo — el
-    // backend ya se encarga de ese orden, acá solo se llama una vez.
     setConfirmandoAccion(true);
     setErrorAccion(null);
 
@@ -498,7 +434,7 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
       camion_placa: camion.camion_placa,
       piloto_id: camion.piloto.id_piloto,
       piloto_nombre: camion.piloto.nombre_piloto,
-      fecha: FECHA_PRUEBA,
+      fecha: fechaHoy(),
       lineas,
     })
       .then((resultado) => {
@@ -537,7 +473,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
           </div>
         </div>
       </div>
-
       {cargando ? (
         <div className="flex items-center justify-center gap-2 text-sm text-gray-400 py-16">
           <Loader2 size={18} className="animate-spin" /> Cargando rutas activas…
@@ -559,12 +494,10 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
           {totalTiendasPendientes} tienda(s) pendientes de entrega
         </span>
       </div>
-
       <p className="mb-4 text-xs text-gray-500 flex items-center gap-1.5">
         <HelpCircle size={13} className="shrink-0 text-gray-400" />
         Esta vista se refresca cada 5 minutos — la posición individual de cada piloto se actualiza aproximadamente cada 30 minutos, en un momento distinto para cada uno.
       </p>
-
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         <div
           className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 p-3 overflow-y-auto"
@@ -624,12 +557,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
             </div>
           )}
         </div>
-
-        {/*
-          isolate + relative + z-0 confinan los z-index internos del mapa
-          (controles de Google Maps) dentro de este contenedor, para que no
-          queden por encima del modal (Dialog usa z-50).
-        */}
         <div
           className="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden isolate relative z-0"
           style={{ height: 560 }}
@@ -637,11 +564,9 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
           <CamionesEnRutaMap camiones={rutas} onSelectCamion={abrirCamion} highlightedId={highlightedId} />
         </div>
       </div>
-
       <p className="mt-3 text-xs text-gray-400">
         El inventario y las tiendas se consultan solo al abrir el detalle de cada camión (no al entrar a la vista).
       </p>
-
       <div className="mt-4">
         <Collapsible
           open={historialExpandido}
@@ -711,7 +636,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
       </div>
       </>
       )}
-
       <Dialog open={!!sinPosicionRuta} onOpenChange={(open) => !open && setSinPosicionRuta(null)}>
         <DialogContent className="sm:max-w-sm bg-white">
           <DialogHeader>
@@ -726,7 +650,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
           <Button variant="outline" onClick={() => setSinPosicionRuta(null)}>Entendido</Button>
         </DialogContent>
       </Dialog>
-
       <Dialog open={!!camion} onOpenChange={(open) => !open && cerrarDialog()}>
         <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto bg-white">
           {camion && (
@@ -737,7 +660,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
                   {camion.tipo_ruta} · Camión {camion.camion_placa} · Piloto {camion.piloto.nombre_piloto}
                 </DialogDescription>
               </DialogHeader>
-
               <div className="text-xs text-gray-500 -mt-2">
                 WhsCode ruta: <span className="font-medium text-gray-700">{camion.whs_code_ruta}</span>
                 {" · "}
@@ -750,7 +672,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
                   <span className="text-amber-600">Sin posición reportada por el piloto</span>
                 )}
               </div>
-
               {accion === null && (
                 <>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -777,7 +698,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
                       <p className="text-[10px] text-gray-500 leading-tight">En tránsito</p>
                     </div>
                   </div>
-
                   <Collapsible open={inventarioExpandido} onOpenChange={setInventarioExpandido} className="rounded-lg border border-gray-100 overflow-hidden">
                     <CollapsibleTrigger className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors">
                       <span className="text-sm font-medium text-gray-800 flex items-center gap-1.5">
@@ -802,10 +722,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
                         ) : camion.inventario.length === 0 ? (
                           <p className="text-xs text-gray-400">Sin inventario cargado.</p>
                         ) : (
-                          // Lista en vez de tabla: con nombres largos de artículo,
-                          // una tabla de columnas fijas se desborda en pantallas
-                          // angostas. Aquí cada fila apila el nombre arriba (con
-                          // salto de línea) y la cantidad abajo/a la derecha.
                           <div className="border border-gray-100 rounded-lg overflow-hidden divide-y divide-gray-50 text-xs">
                             {camion.inventario.map((p) => (
                               <div
@@ -831,7 +747,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
                       </div>
                     </CollapsibleContent>
                   </Collapsible>
-
                   <div>
                     <h4 className="text-sm font-medium text-gray-800 mb-2 flex items-center gap-1.5">
                       <Store size={15} className="text-gray-400" /> Tiendas de la ruta
@@ -907,7 +822,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
                       </div>
                     )}
                   </div>
-
                   {!cargandoInventario && (
                     <div className="pt-2 border-t border-gray-100">
                       {!tieneInventarioDisponible ? (
@@ -932,7 +846,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
                   )}
                 </>
               )}
-
               {accion !== null && resultadoAccion && (
                 <div className="text-center py-4">
                   <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -956,7 +869,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
                   <Button variant="submit" className="mt-4" onClick={cerrarResultadoAccion}>Cerrar</Button>
                 </div>
               )}
-
               {accion !== null && !resultadoAccion && (
                 <div>
                   <h4 className="text-sm font-medium text-gray-800 mb-1">
@@ -971,13 +883,11 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
                         : `Indica cuánto de cada producto se traslada del camión (WhsCode ${camion.whs_code_ruta}) al cuarto frío. No es necesario trasladar la totalidad.`
                       : `Indica cuánto de cada producto se entrega del camión (WhsCode ${camion.whs_code_ruta}). No es necesario entregar la totalidad.`}
                   </p>
-
                   {accion === "traslado" && tipoRuta === "INSUMOS" && (
                     <p className="text-xs text-gray-500 mb-3">
                       Bodega destino: <span className="font-medium text-gray-700">{WHS_BODEGA_CENTRAL_INSUMOS} (Bodega Central)</span>
                     </p>
                   )}
-
                   {accion === "traslado" && tipoRuta === "POLLO" && (
                     <div className="mb-3">
                       <label className="text-xs font-medium text-gray-700 mb-1 block">Bodega de cuarto frío destino</label>
@@ -1007,7 +917,6 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
                       )}
                     </div>
                   )}
-
                   <div className="space-y-2">
                     {Object.keys(cantidades).length === 0 ? (
                       <p className="text-xs text-gray-400">No hay productos con inventario disponible.</p>
@@ -1035,13 +944,11 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
                         ))
                     )}
                   </div>
-
                   {errorAccion && (
                     <p className="text-xs text-red-600 mt-3 flex items-center gap-1">
                       <AlertCircle size={13} /> {errorAccion}
                     </p>
                   )}
-
                   <div className="flex gap-2 mt-4">
                     <Button
                       variant={accion === "traslado" ? "submit" : "success"}

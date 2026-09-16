@@ -20,7 +20,8 @@ import {
   AlertCircle,
   Truck,
   PackageCheck,
-  ClipboardList
+  ClipboardList,
+  ChevronDown
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -37,8 +38,8 @@ import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { TiendaModulo } from "../types/TiendaModel";
 import { getAllTiendas } from "../api/TiendaApi";
-import { Item } from "../types/SapModels";
-import { buscarActivosFijos } from "../api/SapApi";
+import { Item, ActivoFijoCategoria } from "../types/SapModels";
+import { listarActivosFijos } from "../api/SapApi";
 import { crearPedidoActivoFijo, buscarPedidosActivoFijo } from "../api/PedidoPosApi";
 
 type EstadoPedidoAF = "RECIBIDO" | "VALIDADO" | "EN_TRANSITO" | "ENTREGADO" | "ENTREGADO_PARCIAL";
@@ -124,8 +125,6 @@ interface FixedAssetsViewProps {
 export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
   const [tab, setTab] = useState<"buscar" | "crear">("buscar");
   const [validationError, setValidationError] = useState<string | null>(null);
-
-  // ---------------- Tiendas (backend real) ----------------
   const [tiendas, setTiendas] = useState<TiendaModulo[]>([]);
   const [loadingTiendas, setLoadingTiendas] = useState(true);
   const [tiendasError, setTiendasError] = useState<string | null>(null);
@@ -137,14 +136,8 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
       .finally(() => setLoadingTiendas(false));
   }, []);
 
-  // Durante pruebas se incluyen tiendas inactivas a propósito.
-  // Para producción: descomentar el filtro para mostrar solo tiendas activas.
-  const tiendasActivasOTodas = tiendas; // .filter((t) => !t.inactiva);
-
-  // vwTiendasModulo devuelve una fila por cada relación tienda-departamento
-  // (la primary key real de la vista es id_departamento, no id_tienda), así
-  // que una misma tienda puede repetirse varias veces. Para el selector solo
-  // interesa una entrada por tienda.
+  const tiendasActivasOTodas = tiendas;
+  
   const tiendasDisponibles = useMemo(() => {
     const vistas = new Set<string>();
     return tiendasActivasOTodas.filter((t) => {
@@ -160,7 +153,6 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
     [tiendasDisponibles]
   );
 
-  // ---------------- Buscar ----------------
   const [tiendaBusqueda, setTiendaBusqueda] = useState("");
   const [dateFilterType, setDateFilterType] = useState<"all" | "single" | "range">("all");
   const [singleDate, setSingleDate] = useState("");
@@ -212,8 +204,6 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
         numero_pedido: p.numero_pedido,
         tienda,
         fecha_creacion: new Date(p.fecha_pedido),
-        // La cabecera no guarda quién solicitó el pedido, solo queda en el
-        // historial (no lo trae este endpoint). Pendiente si se necesita mostrar.
         solicitado_por: "—",
         estado: p.estado as EstadoPedidoAF,
         items: p.items.map((item) => ({
@@ -253,42 +243,53 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
   const hasActiveFilters = tiendaBusqueda !== "" || dateFilterType !== "all";
   const pedidosPorEstado = (estado: EstadoPedidoAF) => resultados.filter((p) => p.estado === estado);
 
-  // ---------------- Crear ----------------
   const [tiendaCreacion, setTiendaCreacion] = useState("");
   const [fechaRequerida, setFechaRequerida] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [loadingSap, setLoadingSap] = useState(false);
-  const [sapResultados, setSapResultados] = useState<Item[]>([]);
   const [selectedArticulos, setSelectedArticulos] = useState<SelectedArticulo[]>([]);
   const [creando, setCreando] = useState(false);
   const [pedidoCreado, setPedidoCreado] = useState<PedidoActivoFijo | null>(null);
+  const [catalogo, setCatalogo] = useState<ActivoFijoCategoria[]>([]);
+  const [loadingCatalogo, setLoadingCatalogo] = useState(true);
+  const [catalogoError, setCatalogoError] = useState<string | null>(null);
+  const [filtroCatalogo, setFiltroCatalogo] = useState("");
+  const [categoriasAbiertas, setCategoriasAbiertas] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    listarActivosFijos()
+      .then((data) => setCatalogo(data.categorias))
+      .catch((err: any) => setCatalogoError(err?.message || "Error al cargar el catálogo de insumos"))
+      .finally(() => setLoadingCatalogo(false));
+  }, []);
+
+  const catalogoFiltrado = useMemo(() => {
+    const term = filtroCatalogo.trim().toLowerCase();
+    if (!term) return catalogo;
+    return catalogo
+      .map((categoria) => ({
+        ...categoria,
+        items: categoria.items.filter(
+          (item) => item.ItemName.toLowerCase().includes(term) || item.ItemCode.toLowerCase().includes(term)
+        )
+      }))
+      .filter((categoria) => categoria.items.length > 0);
+  }, [catalogo, filtroCatalogo]);
+
+  const toggleCategoria = (id: string) => {
+    setCategoriasAbiertas((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
   const tiendaCreacionSeleccionada = tiendasDisponibles.find((t) => String(t.id_tienda) === tiendaCreacion) || null;
 
-  const handleBuscarSap = async () => {
-    const term = searchTerm.trim();
-    if (!term) return;
-
-    if (term.length < 3) {
-      setValidationError("Escribe al menos 3 caracteres para buscar en SAP.");
-      return;
-    }
-
-    setLoadingSap(true);
-    try {
-      const data = await buscarActivosFijos(term, 1);
-      setSapResultados(data.items);
-    } catch (err: any) {
-      setValidationError(err?.message || "Error al buscar artículos en SAP.");
-    } finally {
-      setLoadingSap(false);
-    }
-  };
-
   const handleAgregarArticulo = (item: Item) => {
     setSelectedArticulos((prev) => [...prev, { article: item, cantidad: 1 }]);
-    setSearchTerm("");
-    setSapResultados([]);
   };
 
   const handleQuitarArticulo = (codigo: string) => {
@@ -350,7 +351,7 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
 
       setPedidoCreado(nuevo);
     } catch (err: any) {
-      setValidationError(err?.message || "Error al crear el pedido de activo fijo.");
+      setValidationError(err?.message || "Error al crear el pedido de insumos.");
     } finally {
       setCreando(false);
     }
@@ -360,8 +361,8 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
     setPedidoCreado(null);
     setTiendaCreacion("");
     setFechaRequerida("");
-    setSearchTerm("");
-    setSapResultados([]);
+    setFiltroCatalogo("");
+    setCategoriasAbiertas(new Set());
     setSelectedArticulos([]);
   };
 
@@ -372,7 +373,7 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
           <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-4 sm:p-6">
             <div className="text-center mb-6">
               <CheckCircle className="h-12 w-12 text-green-600 mx-auto mb-3" />
-              <h2 className="text-gray-900 mb-1">Pedido de Activo Fijo Creado</h2>
+              <h2 className="text-gray-900 mb-1">Pedido de Insumos Creado</h2>
               <p className="text-sm text-gray-600">{pedidoCreado.numero_pedido}</p>
             </div>
             <div className="space-y-3 mb-6">
@@ -424,12 +425,11 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
               <Landmark className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h2 className="text-white text-lg font-semibold leading-tight">Pedidos de Activos Fijos</h2>
-              <p className="text-sm text-white/90">Crea los pedidos de activos fijos para la operación en tiendas</p>
+              <h2 className="text-white text-lg font-semibold leading-tight">Pedidos de Insumos</h2>
+              <p className="text-sm text-white/90">Crea los pedidos de insumos para la operación en tiendas</p>
             </div>
           </div>
         </div>
-
         <div className="flex gap-2 mb-6 bg-white border border-gray-200 rounded-xl p-1.5 shadow-sm w-fit">
           <button
             onClick={() => setTab("buscar")}
@@ -448,13 +448,11 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
             <Plus className="h-4 w-4" /> Crear Pedido
           </button>
         </div>
-
         {tiendasError && (
           <div className="mb-6 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
             No se pudieron cargar las tiendas: {tiendasError}
           </div>
         )}
-
         {tab === "buscar" && (
           <div>
             <div className="bg-white rounded-xl shadow-md border border-gray-200 p-4 mb-6">
@@ -544,7 +542,6 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
                 )}
               </div>
             </div>
-
             {loadingBusqueda && (
               <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 text-center mb-8">
                 <div className="w-16 h-16 bg-[#2183AE]/10 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -554,7 +551,6 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
                 <p className="text-gray-600 text-sm">Espera un momento</p>
               </div>
             )}
-
             {!hasSearched && !loadingBusqueda && (
               <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 text-center mb-8">
                 <div className="w-16 h-16 bg-[#2183AE]/10 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -564,7 +560,6 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
                 <p className="text-gray-600 text-sm">Opcionalmente agrega un filtro de fecha y presiona el botón "Buscar"</p>
               </div>
             )}
-
             {hasSearched && !loadingBusqueda && resultados.length === 0 && (
               <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 text-center mb-8">
                 <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -574,7 +569,6 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
                 <p className="text-gray-600 text-sm">Ajusta los filtros e intenta nuevamente</p>
               </div>
             )}
-
             {hasSearched &&
               !loadingBusqueda &&
               ESTADOS_ORDEN.map((estado) => {
@@ -636,7 +630,6 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
                   </div>
                 );
               })}
-
             {hasSearched && totalPages > 1 && (
               <div className="flex items-center justify-center gap-3 mt-4">
                 <Button variant="outline" disabled={page === 1} onClick={() => handleBuscar(page - 1)}>
@@ -652,7 +645,6 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
             )}
           </div>
         )}
-
         {tab === "crear" && (
           <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-4 sm:p-6">
             <div className="mb-6">
@@ -700,64 +692,89 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
                 </motion.div>
               )}
             </div>
-
             <div className={!tiendaCreacionSeleccionada ? "opacity-50 pointer-events-none select-none" : ""}>
               <div className="mb-6">
-                <Label className="text-sm font-medium text-gray-900 mb-2 block">Buscar Activo Fijo en SAP</Label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleBuscarSap()}
-                      placeholder="Buscar por nombre del artículo..."
-                      className="pl-10"
-                    />
-                  </div>
-                  <Button
-                    onClick={handleBuscarSap}
-                    disabled={loadingSap || !searchTerm.trim()}
-                    className="border border-[#2183AE] bg-[#2183AE] text-white hover:bg-white hover:text-[#2183AE]"
-                  >
-                    {loadingSap ? <Loader2 className="h-4 w-4 animate-spin" /> : "Buscar"}
-                  </Button>
+                <Label className="text-sm font-medium text-gray-900 mb-2 block">Catálogo de Insumos</Label>
+                <div className="relative mb-3">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    value={filtroCatalogo}
+                    onChange={(e) => setFiltroCatalogo(e.target.value)}
+                    placeholder="Filtrar por nombre o código..."
+                    className="pl-10"
+                  />
                 </div>
-              </div>
-
-              {sapResultados.length > 0 && (
-                <div className="mb-8 border border-gray-200 rounded-lg overflow-hidden">
-                  <div className="p-3 bg-gray-50 border-b">
-                    <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">Resultados de búsqueda</span>
+                {loadingCatalogo && (
+                  <div className="flex items-center justify-center gap-2 text-sm text-gray-500 py-8">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Cargando catálogo desde SAP...
                   </div>
-                  <div className="p-2 space-y-1 max-h-[300px] overflow-y-auto">
-                    {sapResultados.map((item) => (
-                      <motion.div
-                        key={item.ItemCode}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 border border-gray-100 rounded-lg hover:bg-gray-50"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-gray-900 break-words">{item.ItemName}</p>
-                          <p className="text-xs text-gray-500 font-mono break-words">{item.ItemCode}</p>
+                )}
+                {catalogoError && !loadingCatalogo && (
+                  <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+                    No se pudo cargar el catálogo: {catalogoError}
+                  </div>
+                )}
+                {!loadingCatalogo && !catalogoError && catalogoFiltrado.length === 0 && (
+                  <div className="text-sm text-gray-500 text-center py-8">
+                    No se encontraron artículos{filtroCatalogo ? " para ese filtro" : ""}.
+                  </div>
+                )}
+                {!loadingCatalogo && !catalogoError && catalogoFiltrado.length > 0 && (
+                  <div className="border border-gray-200 rounded-lg divide-y divide-gray-200 max-h-[420px] overflow-y-auto">
+                    {catalogoFiltrado.map((categoria) => {
+                      const abierta = categoriasAbiertas.has(categoria.id) || filtroCatalogo.trim() !== "";
+                      return (
+                        <div key={categoria.id}>
+                          <button
+                            type="button"
+                            onClick={() => toggleCategoria(categoria.id)}
+                            className="w-full flex items-center justify-between gap-2 p-3 bg-gray-50 hover:bg-gray-100 text-left sticky top-0 z-10"
+                          >
+                            <span className="text-xs font-bold text-gray-700 uppercase tracking-wider truncate">
+                              {categoria.name}
+                            </span>
+                            <span className="flex items-center gap-2 shrink-0">
+                              <span className="text-[10px] text-gray-500 bg-white border border-gray-200 rounded-full px-2 py-0.5">
+                                {categoria.items.length}
+                              </span>
+                              <ChevronDown
+                                className={`h-4 w-4 text-gray-400 transition-transform ${abierta ? "rotate-180" : ""}`}
+                              />
+                            </span>
+                          </button>
+                          {abierta && (
+                            <div className="p-2 space-y-1">
+                              {categoria.items.map((item) => (
+                                <motion.div
+                                  key={item.ItemCode}
+                                  initial={{ opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 border border-gray-100 rounded-lg hover:bg-gray-50"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-gray-900 break-words">{item.ItemName}</p>
+                                    <p className="text-xs text-gray-500 font-mono break-words">{item.ItemCode}</p>
+                                  </div>
+                                  <Button
+                                    onClick={() => handleAgregarArticulo(item)}
+                                    disabled={selectedArticulos.some((a) => a.article.ItemCode === item.ItemCode)}
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-[#2183AE] text-[#2183AE] hover:bg-[#2183AE] hover:text-white shrink-0 w-full sm:w-auto"
+                                  >
+                                    <Plus className="h-4 w-4 mr-1" /> Agregar
+                                  </Button>
+                                </motion.div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                        <Button
-                          onClick={() => handleAgregarArticulo(item)}
-                          disabled={selectedArticulos.some((a) => a.article.ItemCode === item.ItemCode)}
-                          size="sm"
-                          variant="outline"
-                          className="border-[#2183AE] text-[#2183AE] hover:bg-[#2183AE] hover:text-white shrink-0 w-full sm:w-auto"
-                        >
-                          <Plus className="h-4 w-4 mr-1" /> Agregar
-                        </Button>
-                      </motion.div>
-                    ))}
+                      );
+                    })}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-
             {selectedArticulos.length > 0 && (
               <div className="border-t pt-6">
                 <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -819,14 +836,13 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
                   disabled={creando}
                   className="w-full border border-[#2183AE] bg-[#2183AE] text-white hover:bg-white hover:text-[#2183AE]"
                 >
-                  {creando ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : "Crear Pedido de Activo Fijo"}
+                  {creando ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : "Crear Pedido de Insumos"}
                 </Button>
               </div>
             )}
           </div>
         )}
       </div>
-
       <Dialog open={!!selectedPedido} onOpenChange={(open) => !open && setSelectedPedido(null)}>
         <DialogContent className="sm:max-w-lg bg-white">
           {selectedPedido && (
@@ -872,7 +888,6 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
           )}
         </DialogContent>
       </Dialog>
-
       {validationError && <ValidationErrorModal message={validationError} onClose={() => setValidationError(null)} />}
     </div>
   );

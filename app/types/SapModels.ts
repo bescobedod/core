@@ -30,3 +30,9 @@ export interface Item {
     ItemName: string;
     SalesUnit: string;
 }
+
+export interface ActivoFijoCategoria {
+    id: string;
+    name: string;
+    items: Item[];
+}
