@@ -43,6 +43,9 @@ import {
   liberarCandado,
 } from "../api/RutaInsumoApi";
 import { RutaInsumos, CandadoRutaInsumos } from "../types/RutaInsumoModel";
+import { getAllMenus } from "../api/MenuApi";
+import { NivelPermisoMenu } from "../types/MenuModel";
+import { PedidosInsumoLecturaView } from "./PedidosInsumoLecturaView";
 
 function nombrePiloto(p: PilotoUsuario) {
   return [p.first_name, p.second_name, p.first_last_name, p.second_last_name].filter(Boolean).join(" ");
@@ -638,7 +641,7 @@ function AsignacionFifoModal({ grupos, fecha, guardando, error, onClose, onCambi
   );
 }
 
-export function PedidosInsumosView() {
+function PedidosInsumosViewCompleta() {
   const todayStr = format(new Date(), "yyyy-MM-dd");
   const defaultDate = format(addDays(new Date(), 1), "yyyy-MM-dd");
 
@@ -1444,4 +1447,37 @@ export function PedidosInsumosView() {
       )}
     </div>
   );
+}
+
+// Decide, según el nivel_permiso del usuario para este menú (PedidosInsumosView
+// en config.tbl_menu_rol), si se muestra el panel operativo completo o la
+// pantalla de solo lectura. Por defecto (sin fila en tbl_menu_rol, o si falla
+// la consulta) se asume 'escritura' — sin cambios para nadie que no lo tenga configurado.
+export function PedidosInsumosView() {
+  const [nivelPermiso, setNivelPermiso] = useState<NivelPermisoMenu>("escritura");
+  const [cargandoPermiso, setCargandoPermiso] = useState(true);
+
+  useEffect(() => {
+    getAllMenus()
+      .then((menus) => {
+        const propio = menus.find((m) => m.nombre_menu === "PedidosInsumosView");
+        setNivelPermiso(propio?.nivel_permiso || "escritura");
+      })
+      .catch(() => setNivelPermiso("escritura"))
+      .finally(() => setCargandoPermiso(false));
+  }, []);
+
+  if (cargandoPermiso) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 text-[#2183AE] animate-spin" />
+      </div>
+    );
+  }
+
+  if (nivelPermiso === "lectura" || nivelPermiso === "lectura_division") {
+    return <PedidosInsumoLecturaView nivelPermiso={nivelPermiso} />;
+  }
+
+  return <PedidosInsumosViewCompleta />;
 }

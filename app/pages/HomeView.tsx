@@ -38,7 +38,9 @@ const viewMap: Record<string, string> = {
   PilotoClienteSapPolloView: 'piloto-cliente-sap-pollo',
   PilotoClienteSapInsumoView: 'piloto-cliente-sap-insumos',
   MenuPermisosView: 'menu-permisos',
-  UsuarioMuellePolloView: 'usuario-muelle-pollo'
+  UsuarioMuellePolloView: 'usuario-muelle-pollo',
+  PedidosPolloLecturaView: 'reporte-pedidos-pollo',
+  PedidosInsumoLecturaView: 'reporte-pedidos-insumo'
 };
 
 function getIcon(name: string) {

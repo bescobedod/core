@@ -1,4 +1,4 @@
-import { MenuModel, MenuRolAsignacion } from "../types/MenuModel";
+import { MenuModel, MenuRolAsignacion, NivelPermisoMenu } from "../types/MenuModel";
 import { authFetch } from "../utils/auth-fetch";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL
@@ -74,15 +74,35 @@ export async function getRolesDeMenu(id_menu: number): Promise<MenuRolAsignacion
     return data.roles;
 }
 
-export async function asignarRolAMenu(id_menu: number, id_rol_core: number): Promise<MenuRolAsignacion> {
+export async function asignarRolAMenu(
+    id_menu: number,
+    id_rol_core: number,
+    nivel_permiso?: NivelPermisoMenu
+): Promise<MenuRolAsignacion> {
     const response = await authFetch(`/menus/asignarRolAMenu`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id_menu, id_rol_core }),
+        body: JSON.stringify({ id_menu, id_rol_core, nivel_permiso }),
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
         throw new Error(data.details || data.error || "Error al asignar el rol al menú");
+    }
+    return data.asignacion;
+}
+
+export async function actualizarNivelPermiso(
+    id_menu_rol: number,
+    nivel_permiso: NivelPermisoMenu
+): Promise<MenuRolAsignacion> {
+    const response = await authFetch(`/menus/actualizarNivelPermiso/${id_menu_rol}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nivel_permiso }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.details || data.error || "Error al actualizar el nivel de permiso");
     }
     return data.asignacion;
 }

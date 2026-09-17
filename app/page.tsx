@@ -31,6 +31,8 @@ import { PilotoClienteSapPolloView } from "./pages/PilotoClienteSapPolloView";
 import { PilotoClienteSapInsumoView } from "./pages/PilotoClienteSapInsumoView";
 import { MenuPermisosView } from "./pages/MenuPermisosView";
 import { UsuarioMuellePolloView } from "./pages/UsuarioMuellePolloView";
+import { PedidosPolloLecturaView } from "./pages/PedidosPolloLecturaView";
+import { PedidosInsumoLecturaView } from "./pages/PedidosInsumoLecturaView";
 
 type View =
   "login"
@@ -55,7 +57,9 @@ type View =
   | "piloto-cliente-sap-pollo"
   | "piloto-cliente-sap-insumos"
   | "menu-permisos"
-  | "usuario-muelle-pollo";
+  | "usuario-muelle-pollo"
+  | "reporte-pedidos-pollo"
+  | "reporte-pedidos-insumo";
 
 export default function App() {
   const [isClient, setIsClient] = useState(false);

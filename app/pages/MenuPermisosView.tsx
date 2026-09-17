@@ -10,11 +10,18 @@ import {
   actualizarVisibilidadMenu,
   getRolesDeMenu,
   asignarRolAMenu,
+  actualizarNivelPermiso,
   quitarRolDeMenu,
 } from "../api/MenuApi";
 import { getAllRoles } from "../api/RolApi";
-import { MenuModel, MenuRolAsignacion } from "../types/MenuModel";
+import { MenuModel, MenuRolAsignacion, NivelPermisoMenu } from "../types/MenuModel";
 import { RolModel } from "../types/RolModel";
+
+const NIVELES_PERMISO: { value: NivelPermisoMenu; label: string }[] = [
+  { value: "escritura", label: "Escritura" },
+  { value: "lectura", label: "Lectura" },
+  { value: "lectura_division", label: "Lectura (su división)" },
+];
 
 export function MenuPermisosView() {
   const [menus, setMenus] = useState<MenuModel[]>([]);
@@ -33,8 +40,10 @@ export function MenuPermisosView() {
   const [errorRoles, setErrorRoles] = useState<string | null>(null);
   const [todosLosRoles, setTodosLosRoles] = useState<RolModel[]>([]);
   const [rolParaAgregar, setRolParaAgregar] = useState("");
+  const [nivelPermisoParaAgregar, setNivelPermisoParaAgregar] = useState<NivelPermisoMenu>("escritura");
   const [agregandoRol, setAgregandoRol] = useState(false);
   const [errorAgregarRol, setErrorAgregarRol] = useState<string | null>(null);
+  const [cambiandoNivelId, setCambiandoNivelId] = useState<number | null>(null);
 
   const cargarMenus = (seleccionarId?: number) => {
     setCargandoMenus(true);
@@ -73,6 +82,7 @@ export function MenuPermisosView() {
   useEffect(() => {
     cargarRolesDelMenu(menuSeleccionado);
     setRolParaAgregar("");
+    setNivelPermisoParaAgregar("escritura");
   }, [menuSeleccionado]);
 
   const handleCrearMenu = async () => {
@@ -121,13 +131,34 @@ export function MenuPermisosView() {
     setErrorAgregarRol(null);
 
     try {
-      await asignarRolAMenu(menuSeleccionado, Number(rolParaAgregar));
+      await asignarRolAMenu(menuSeleccionado, Number(rolParaAgregar), nivelPermisoParaAgregar);
       setRolParaAgregar("");
+      setNivelPermisoParaAgregar("escritura");
       cargarRolesDelMenu(menuSeleccionado);
     } catch (err) {
       setErrorAgregarRol(err instanceof Error ? err.message : "Error al asignar el rol");
     } finally {
       setAgregandoRol(false);
+    }
+  };
+
+  const handleCambiarNivelPermiso = async (id_menu_rol: number, nuevoNivel: NivelPermisoMenu) => {
+    const anterior = rolesDelMenu.find((r) => r.id_menu_rol === id_menu_rol)?.nivel_permiso;
+
+    setCambiandoNivelId(id_menu_rol);
+    setRolesDelMenu((prev) =>
+      prev.map((r) => (r.id_menu_rol === id_menu_rol ? { ...r, nivel_permiso: nuevoNivel } : r))
+    );
+
+    try {
+      await actualizarNivelPermiso(id_menu_rol, nuevoNivel);
+    } catch (err) {
+      setRolesDelMenu((prev) =>
+        prev.map((r) => (r.id_menu_rol === id_menu_rol ? { ...r, nivel_permiso: anterior || r.nivel_permiso } : r))
+      );
+      setErrorRoles(err instanceof Error ? err.message : "Error al actualizar el nivel de permiso");
+    } finally {
+      setCambiandoNivelId(null);
     }
   };
 
@@ -290,6 +321,15 @@ export function MenuPermisosView() {
                     <option key={r.id_rol} value={r.id_rol}>{r.nombre}</option>
                   ))}
                 </select>
+                <select
+                value={nivelPermisoParaAgregar}
+                onChange={(e) => setNivelPermisoParaAgregar(e.target.value as NivelPermisoMenu)}
+                className="h-9 rounded-md border border-gray-200 bg-transparent px-3 text-sm"
+                >
+                  {NIVELES_PERMISO.map((n) => (
+                    <option key={n.value} value={n.value}>{n.label}</option>
+                  ))}
+                </select>
                 <Button
                 variant="submit"
                 onClick={handleAgregarRol}
@@ -319,7 +359,17 @@ export function MenuPermisosView() {
                   <div className="divide-y divide-gray-100">
                     {rolesDelMenu.map((r) => (
                       <div key={r.id_menu_rol} className="flex items-center justify-between gap-3 py-3">
-                        <p className="text-sm text-gray-800 truncate">{r.nombre_rol || `Rol #${r.id_rol_core}`}</p>
+                        <p className="text-sm text-gray-800 truncate flex-1 min-w-0">{r.nombre_rol || `Rol #${r.id_rol_core}`}</p>
+                        <select
+                        value={r.nivel_permiso}
+                        onChange={(e) => handleCambiarNivelPermiso(r.id_menu_rol, e.target.value as NivelPermisoMenu)}
+                        disabled={cambiandoNivelId === r.id_menu_rol}
+                        className="h-8 rounded-md border border-gray-200 bg-transparent px-2 text-xs shrink-0"
+                        >
+                          {NIVELES_PERMISO.map((n) => (
+                            <option key={n.value} value={n.value}>{n.label}</option>
+                          ))}
+                        </select>
                         <button
                         onClick={() => handleQuitarRol(r.id_menu_rol)}
                         className="p-1.5 text-gray-400 enabled:hover:text-red-500 enabled:hover:bg-red-50 rounded-lg transition-colors shrink-0"

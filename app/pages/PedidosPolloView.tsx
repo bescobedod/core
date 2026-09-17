@@ -27,7 +27,7 @@ import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { motion, AnimatePresence } from "motion/react";
-import { getPedidosPos, getComparativoStockPollo, enviarTransferenciaPollo, previsualizarTicketPollo, firmarTicketPollo } from "../api/PedidoPosApi";
+import { getPedidosPos, getComparativoStockPollo, enviarTransferenciaPollo, previsualizarTicketPollo, firmarTicketPollo, previsualizarResumenRutaPollo } from "../api/PedidoPosApi";
 import { guardarAsignacionCantidades } from "../api/AsignacionApi";
 import { PedidoPosRuta, PedidoPosTienda } from "../types/PedidoPosModel";
 import { ComparativoStockItem } from "../types/StockModel";
@@ -44,6 +44,9 @@ import {
   liberarCandado,
 } from "../api/RutaPolloApi";
 import { RutaPollo, MuelleUsuario, CandadoRutaPollo } from "../types/RutaPolloModel";
+import { getAllMenus } from "../api/MenuApi";
+import { NivelPermisoMenu } from "../types/MenuModel";
+import { PedidosPolloLecturaView } from "./PedidosPolloLecturaView";
 
 function nombrePiloto(p: PilotoUsuario) {
   return [p.first_name, p.second_name, p.first_last_name, p.second_last_name].filter(Boolean).join(" ");
@@ -122,6 +125,32 @@ function TicketPreviewModal({ ticketUrl, firmando, firmado, error, onClose, onFi
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+interface ResumenRutaPreviewModalProps {
+  url: string;
+  onClose: () => void;
+}
+
+function ResumenRutaPreviewModal({ url, onClose }: ResumenRutaPreviewModalProps) {
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <h3 className="text-base font-semibold text-gray-900">Resumen de ruta</h3>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-400">
+            <XIcon size={18} />
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 bg-gray-100">
+          <iframe src={url} title="Vista previa del resumen de ruta" className="w-full h-full border-0" style={{ minHeight: "70vh" }} />
+        </div>
+        <div className="px-6 py-3 border-t border-gray-100 flex justify-end shrink-0">
+          <Button onClick={onClose} variant="cancel" size="sm">Cerrar</Button>
+        </div>
       </div>
     </div>
   );
@@ -573,7 +602,7 @@ function AsignacionFifoModal({ grupos, fecha, guardando, error, onClose, onCambi
   );
 }
 
-export function PedidosPolloView() {
+function PedidosPolloViewCompleta() {
   const todayStr = format(new Date(), "yyyy-MM-dd");
   const defaultDate = format(addDays(new Date(), 1), "yyyy-MM-dd");
 
@@ -623,6 +652,11 @@ export function PedidosPolloView() {
   const [firmandoTicket, setFirmandoTicket] = useState(false);
   const [errorFirmarTicket, setErrorFirmarTicket] = useState<string | null>(null);
   const [ticketFirmado, setTicketFirmado] = useState(false);
+
+  const [showResumenRutaModal, setShowResumenRutaModal] = useState(false);
+  const [resumenRutaUrl, setResumenRutaUrl] = useState<string | null>(null);
+  const [cargandoResumenRuta, setCargandoResumenRuta] = useState(false);
+  const [errorResumenRuta, setErrorResumenRuta] = useState<string | null>(null);
 
   const [camiones, setCamiones] = useState<CamionModel[]>([]);
   const [pilotos, setPilotos] = useState<PilotoUsuario[]>([]);
@@ -941,6 +975,29 @@ export function PedidosPolloView() {
     }
   };
 
+  // Funciona igual antes y después de enviar a SAP, mientras ya se haya
+  // guardado una asignación (cantidad_asignada) para la ruta.
+  const handlePrevisualizarResumenRuta = async (rutaId: string, fecha: string) => {
+    setCargandoResumenRuta(true);
+    setErrorResumenRuta(null);
+
+    try {
+      const url = await previsualizarResumenRutaPollo(rutaId, fecha);
+      setResumenRutaUrl(url);
+      setShowResumenRutaModal(true);
+    } catch (err) {
+      setErrorResumenRuta(err instanceof Error ? err.message : "Error al generar el resumen de ruta");
+    } finally {
+      setCargandoResumenRuta(false);
+    }
+  };
+
+  const handleCerrarResumenRutaModal = () => {
+    if (resumenRutaUrl) window.URL.revokeObjectURL(resumenRutaUrl);
+    setResumenRutaUrl(null);
+    setShowResumenRutaModal(false);
+  };
+
   const handleAsignado = (
     rutaId: string,
     camionId: string,
@@ -1094,8 +1151,18 @@ export function PedidosPolloView() {
                       <Truck size={14} className="mr-1.5" />
                       Trasladar Envío
                     </Button>
+                    <Button
+                      onClick={() => handlePrevisualizarResumenRuta(rutaElegidaId, fechaElegida)}
+                      disabled={cargandoResumenRuta}
+                      size="sm"
+                      variant="outline"
+                    >
+                      {cargandoResumenRuta ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <FileText size={14} className="mr-1.5" />}
+                      Resumen de ruta
+                    </Button>
                   </div>
                   {errorTicket && <p className="text-xs text-red-600 mt-1.5">{errorTicket}</p>}
+                  {errorResumenRuta && <p className="text-xs text-red-600 mt-1.5">{errorResumenRuta}</p>}
 
                   {trasladoAbierto && (
                     <div className="mt-3 p-3 border border-yellow-600 rounded-lg bg-amber-50/50 space-y-2">
@@ -1288,8 +1355,23 @@ export function PedidosPolloView() {
                       Enviar a SAP
                     </Button>
                   )}
+                  {pedidoRuta && pedidoRuta.estado_general !== "RECIBIDO" && (
+                    <Button
+                      onClick={() => handlePrevisualizarResumenRuta(candado?.ruta_id || rutaElegidaId, candado?.fecha || fechaElegida)}
+                      disabled={cargandoResumenRuta}
+                      size="sm"
+                      variant="outline"
+                    >
+                      {cargandoResumenRuta ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <FileText size={14} className="mr-1.5" />}
+                      Resumen de ruta
+                    </Button>
+                  )}
                 </div>
               </div>
+
+              {errorResumenRuta && (
+                <p className="text-xs text-red-600 mb-4 flex items-center gap-1"><AlertCircle size={12} /> {errorResumenRuta}</p>
+              )}
 
               {pedidoRuta?.estado_general === "VALIDADO" && (!pedidoRuta.camion_id || !pedidoRuta.piloto_id) && (
                 <p className="text-xs text-amber-600 mb-4 flex items-center gap-1">
@@ -1340,6 +1422,44 @@ export function PedidosPolloView() {
           onFirmar={handleFirmarTicket}
         />
       )}
+
+      {showResumenRutaModal && resumenRutaUrl && (
+        <ResumenRutaPreviewModal url={resumenRutaUrl} onClose={handleCerrarResumenRutaModal} />
+      )}
     </div>
   );
+}
+
+// Decide, según el nivel_permiso del usuario para este menú (PedidosPolloView
+// en config.tbl_menu_rol), si se muestra el panel operativo completo
+// (candados, transporte, stock, envío a SAP) o la pantalla de solo lectura.
+// Por defecto (sin fila en tbl_menu_rol, o si falla la consulta) se asume
+// 'escritura' — el comportamiento de siempre no cambia para nadie.
+export function PedidosPolloView() {
+  const [nivelPermiso, setNivelPermiso] = useState<NivelPermisoMenu>("escritura");
+  const [cargandoPermiso, setCargandoPermiso] = useState(true);
+
+  useEffect(() => {
+    getAllMenus()
+      .then((menus) => {
+        const propio = menus.find((m) => m.nombre_menu === "PedidosPolloView");
+        setNivelPermiso(propio?.nivel_permiso || "escritura");
+      })
+      .catch(() => setNivelPermiso("escritura"))
+      .finally(() => setCargandoPermiso(false));
+  }, []);
+
+  if (cargandoPermiso) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 text-[#2183AE] animate-spin" />
+      </div>
+    );
+  }
+
+  if (nivelPermiso === "lectura" || nivelPermiso === "lectura_division") {
+    return <PedidosPolloLecturaView nivelPermiso={nivelPermiso} />;
+  }
+
+  return <PedidosPolloViewCompleta />;
 }

@@ -1,6 +1,17 @@
 import { UserModel } from "../types/UserModel";
 import { authFetch } from "../utils/auth-fetch";
 
+export async function getMiDivision(): Promise<{ division: number | null }> {
+    const response = await authFetch(`/usuario/getMiDivision`);
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Error al obtener la división del usuario");
+    }
+
+    return response.json();
+}
+
 export async function getUsersByDepartamento(id_matriz: string) : Promise<UserModel[]> {
     const response = await authFetch(`/usuario/getUsersByDepartamento/${id_matriz}`, {
         method: 'GET',

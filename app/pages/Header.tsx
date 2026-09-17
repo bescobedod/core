@@ -16,7 +16,9 @@ type View =
   | "departamentos"
   | "personal"
   | "ordenes-compra"
-  | "inspecciones-camiones";
+  | "inspecciones-camiones"
+  | "reporte-pedidos-pollo"
+  | "reporte-pedidos-insumo";
 
 interface HeaderProps {
   userName: string | null;

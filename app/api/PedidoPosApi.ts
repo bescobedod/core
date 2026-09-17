@@ -41,6 +41,40 @@ export async function getPedidosPos(
     return response.json();
 }
 
+// Igual que getPedidosPos, pero filtrado en el backend por división (usa
+// dbo.tTienda.StoreNumberSimphony para saber qué tiendas pertenecen a esa
+// división) en vez de traer todo el día y filtrar en el frontend. La usan
+// las vistas de solo lectura (PedidosLecturaBase).
+export async function getPedidosPorDivision(
+    tipoPedido: 'INSUMOS',
+    fechaRequerida: string,
+    division: '1' | '2'
+): Promise<PedidosPosInsumosResponse>;
+export async function getPedidosPorDivision(
+    tipoPedido: 'POLLO',
+    fechaRequerida: string,
+    division: '1' | '2'
+): Promise<PedidosPosResponse>;
+export async function getPedidosPorDivision(
+    tipoPedido: TipoPedidoPos,
+    fechaRequerida: string,
+    division: '1' | '2'
+): Promise<PedidosPosResponse | PedidosPosInsumosResponse> {
+    const params = new URLSearchParams({
+        tipo_pedido: tipoPedido,
+        fecha_requerida: fechaRequerida,
+        division,
+    });
+
+    const response = await authFetch(`/pedido/getPedidosPorDivision?${params.toString()}`);
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Error al obtener los pedidos por división");
+    }
+
+    return response.json();
+}
+
 export interface CrearPedidoActivoFijoPayload {
     id_tienda: number;
     codigo_tienda: string;
@@ -244,6 +278,17 @@ export async function previsualizarTicketInsumos(rutaId: string, fecha: string):
 export async function previsualizarResumenRutaInsumos(rutaId: string, fecha: string): Promise<string> {
     const params = new URLSearchParams({ ruta_id: rutaId, fecha });
     const response = await authFetch(`/pedido/generarResumenRutaInsumos?${params.toString()}`);
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Error al generar el resumen de ruta");
+    }
+    const blob = await response.blob();
+    return window.URL.createObjectURL(blob);
+}
+
+export async function previsualizarResumenRutaPollo(rutaId: string, fecha: string): Promise<string> {
+    const params = new URLSearchParams({ ruta_id: rutaId, fecha });
+    const response = await authFetch(`/pedido/generarResumenRutaPollo?${params.toString()}`);
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.details || errorData.error || "Error al generar el resumen de ruta");

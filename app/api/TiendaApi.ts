@@ -8,6 +8,6 @@ export async function getAllTiendas(): Promise<TiendaModulo[]> {
     if(!response.ok) {
         throw new Error("Error al obtener lista de tiendas");
     }
-    
+
     return response.json();
 }
