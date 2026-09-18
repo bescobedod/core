@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, Loader2, AlertCircle, Store, Truck, Package, Filter } from "lucide-react";
+import { ChevronDown, Loader2, AlertCircle, Store, Truck, Package, Filter, QrCode, X as XIcon } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
-import { getPedidosPorDivision } from "../api/PedidoPosApi";
+import { getPedidosPorDivision, previsualizarQrsRutaPollo, previsualizarQrsRutaInsumos } from "../api/PedidoPosApi";
 import { getMiDivision } from "../api/UserApi";
 import { PedidoPosItem, PedidoPosRuta, PedidoPosRutaInsumos } from "../types/PedidoPosModel";
+
+const ESTADOS_CON_QR = ["EN_TRANSITO", "ENTREGADO", "ENTREGADO_PARCIAL", "MIXTO"];
 
 interface PedidoNormalizado {
   label: string;
@@ -26,6 +28,7 @@ interface TiendaNormalizada {
 interface RutaNormalizada {
   ruta_id: string;
   nombre_ruta: string;
+  estado_general: string;
   tiendas: TiendaNormalizada[];
 }
 
@@ -61,6 +64,7 @@ function normalizarPollo(rutas: PedidoPosRuta[]): RutaNormalizada[] {
     return {
       ruta_id: r.ruta_id || `${r.nombre_ruta}-${idx}`,
       nombre_ruta: r.nombre_ruta,
+      estado_general: r.estado_general,
       tiendas: Array.from(tiendasPorCodigo.values()),
     };
   });
@@ -70,6 +74,7 @@ function normalizarInsumos(rutas: PedidoPosRutaInsumos[]): RutaNormalizada[] {
   return rutas.map((r, idx) => ({
     ruta_id: r.ruta_id || `${r.nombre_ruta}-${idx}`,
     nombre_ruta: r.nombre_ruta,
+    estado_general: r.estado_general,
     tiendas: r.tiendas.map((t) => {
       const pedidos: PedidoNormalizado[] = [];
       if (t.insumos) {
@@ -81,6 +86,32 @@ function normalizarInsumos(rutas: PedidoPosRutaInsumos[]): RutaNormalizada[] {
       return { codigo_tienda: t.codigo_tienda || "", nombre_tienda: t.nombre_tienda || "—", pedidos };
     }),
   }));
+}
+
+interface QrPreviewModalProps {
+  url: string;
+  onClose: () => void;
+}
+
+function QrPreviewModal({ url, onClose }: QrPreviewModalProps) {
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+          <h3 className="text-base font-semibold text-gray-900">Códigos QR de pedidos</h3>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-400">
+            <XIcon size={18} />
+          </button>
+        </div>
+        <div className="flex-1 min-h-0 bg-gray-100">
+          <iframe src={url} title="Vista previa de códigos QR" className="w-full h-full border-0" style={{ minHeight: "70vh" }} />
+        </div>
+        <div className="px-6 py-3 border-t border-gray-100 flex justify-end shrink-0">
+          <Button onClick={onClose} variant="cancel" size="sm">Cerrar</Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 interface PedidosLecturaBaseProps {
@@ -106,6 +137,10 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
   const [hasSearched, setHasSearched] = useState(false);
   const [rutasAbiertas, setRutasAbiertas] = useState<Set<string>>(new Set());
   const [tiendasAbiertas, setTiendasAbiertas] = useState<Set<string>>(new Set());
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [cargandoQrRutaId, setCargandoQrRutaId] = useState<string | null>(null);
+  const [errorQr, setErrorQr] = useState<string | null>(null);
 
   useEffect(() => {
     if (nivelPermiso !== "lectura_division") return;
@@ -164,6 +199,34 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
       else next.add(key);
       return next;
     });
+  };
+
+  // Disponible en cualquier nivel de permiso (lectura, lectura_division o
+  // escritura): generar el QR es una acción de solo lectura, no requiere
+  // permiso de escritura. Solo tiene sentido cuando la ruta ya está
+  // EN_TRANSITO (el piloto ya la lleva).
+  const handlePrevisualizarQr = async (ruta: RutaNormalizada) => {
+    setCargandoQrRutaId(ruta.ruta_id);
+    setErrorQr(null);
+
+    try {
+      const url =
+        tipoPedido === "POLLO"
+          ? await previsualizarQrsRutaPollo(ruta.ruta_id, fecha)
+          : await previsualizarQrsRutaInsumos(ruta.ruta_id, fecha);
+      setQrUrl(url);
+      setShowQrModal(true);
+    } catch (err) {
+      setErrorQr(err instanceof Error ? err.message : "Error al generar los códigos QR");
+    } finally {
+      setCargandoQrRutaId(null);
+    }
+  };
+
+  const handleCerrarQrModal = () => {
+    if (qrUrl) window.URL.revokeObjectURL(qrUrl);
+    setQrUrl(null);
+    setShowQrModal(false);
   };
 
   const sinDivisionAsignada = nivelPermiso === "lectura_division" && !cargandoDivision && !miDivision;
@@ -226,6 +289,10 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
               Buscar
             </Button>
           </div>
+
+          {errorQr && (
+            <p className="text-xs text-red-600 mt-2 flex items-center gap-1"><AlertCircle className="h-3.5 w-3.5" /> {errorQr}</p>
+          )}
         </div>
 
         {cargando && (
@@ -266,22 +333,39 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
               const abierta = rutasAbiertas.has(ruta.ruta_id);
               return (
                 <div key={ruta.ruta_id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => toggleRuta(ruta.ruta_id)}
-                    className="w-full flex items-center justify-between gap-2 p-3 bg-gray-50 hover:bg-gray-100 text-left sticky top-0 z-10"
-                  >
-                    <span className="flex items-center gap-2 text-sm font-bold text-gray-700 min-w-0">
+                  <div className="w-full flex items-center justify-between gap-2 p-3 bg-gray-50 hover:bg-gray-100 sticky top-0 z-10">
+                    <button
+                      type="button"
+                      onClick={() => toggleRuta(ruta.ruta_id)}
+                      className="flex items-center gap-2 text-sm font-bold text-gray-700 min-w-0 flex-1 text-left"
+                    >
                       <Truck className="h-4 w-4 text-[#2183AE] shrink-0" />
                       <span className="truncate">{ruta.nombre_ruta}</span>
-                    </span>
+                    </button>
                     <span className="flex items-center gap-2 shrink-0">
-                      <span className="text-[10px] text-gray-500 bg-white border border-gray-200 rounded-full px-2 py-0.5">
-                        {ruta.tiendas.length} tienda{ruta.tiendas.length !== 1 ? "s" : ""}
-                      </span>
-                      <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${abierta ? "rotate-180" : ""}`} />
+                      {ESTADOS_CON_QR.includes(ruta.estado_general) && (
+                        <Button
+                          onClick={() => handlePrevisualizarQr(ruta)}
+                          disabled={cargandoQrRutaId === ruta.ruta_id}
+                          size="sm"
+                          variant="outline"
+                        >
+                          {cargandoQrRutaId === ruta.ruta_id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                          ) : (
+                            <QrCode className="h-3.5 w-3.5 mr-1.5" />
+                          )}
+                          Generar QRs
+                        </Button>
+                      )}
+                      <button type="button" onClick={() => toggleRuta(ruta.ruta_id)} className="flex items-center gap-2">
+                        <span className="text-[10px] text-gray-500 bg-white border border-gray-200 rounded-full px-2 py-0.5">
+                          {ruta.tiendas.length} tienda{ruta.tiendas.length !== 1 ? "s" : ""}
+                        </span>
+                        <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${abierta ? "rotate-180" : ""}`} />
+                      </button>
                     </span>
-                  </button>
+                  </div>
 
                   {abierta && (
                     <div className="divide-y divide-gray-100">
@@ -341,6 +425,8 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
           </div>
         )}
       </div>
+
+      {showQrModal && qrUrl && <QrPreviewModal url={qrUrl} onClose={handleCerrarQrModal} />}
     </div>
   );
 }

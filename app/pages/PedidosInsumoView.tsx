@@ -21,13 +21,14 @@ import {
   Send,
   FileText,
   Landmark,
+  QrCode,
 } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { motion, AnimatePresence } from "motion/react";
-import { getPedidosPos, getComparativoStockInsumos, enviarTransferenciaInsumos, previsualizarTicketInsumos, firmarTicketInsumos, previsualizarResumenRutaInsumos } from "../api/PedidoPosApi";
+import { getPedidosPos, getComparativoStockInsumos, enviarTransferenciaInsumos, previsualizarTicketInsumos, firmarTicketInsumos, previsualizarResumenRutaInsumos, previsualizarQrsRutaInsumos, previsualizarReporteDetalleInsumos } from "../api/PedidoPosApi";
 import { guardarAsignacionCantidades } from "../api/AsignacionApi";
 import { PedidoPosRutaInsumos, PedidoPosTiendaInsumos, PedidoPosDetallePedido } from "../types/PedidoPosModel";
 import { ComparativoStockItem } from "../types/StockModel";
@@ -64,6 +65,12 @@ const ESTADO_STOCK_CFG = {
   sin_stock:     { label: "Sin stock",       chip: "bg-red-50 text-red-700 border-red-200",        icon: <XCircle size={13} /> },
   no_encontrado: { label: "No existe en SAP", chip: "bg-gray-100 text-gray-500 border-gray-200",    icon: <AlertCircle size={13} /> },
 };
+
+// Estados desde los que ya tiene sentido generar el QR: cualquiera que
+// implique que la transferencia ya se envió a SAP (EN_TRANSITO en adelante),
+// no solo mientras va en camino — sigue siendo útil aunque ya esté
+// entregado, parcial, o mixto entre tiendas.
+const ESTADOS_CON_QR = ["EN_TRANSITO", "ENTREGADO", "ENTREGADO_PARCIAL", "MIXTO"];
 
 const ESTADO_PEDIDO_CFG: Record<string, { label: string; chip: string; icon: ReactNode }> = {
   PENDIENTE_ENRIQUECIMIENTO: { label: "Pendiente enriquecimiento", chip: "bg-gray-100 text-gray-500 border-gray-200", icon: <AlertCircle size={12} /> },
@@ -132,14 +139,15 @@ function TicketPreviewModal({ ticketUrl, firmando, firmado, error, onClose, onFi
 interface ResumenRutaPreviewModalProps {
   url: string;
   onClose: () => void;
+  titulo?: string;
 }
 
-function ResumenRutaPreviewModal({ url, onClose }: ResumenRutaPreviewModalProps) {
+function ResumenRutaPreviewModal({ url, onClose, titulo = "Resumen de ruta" }: ResumenRutaPreviewModalProps) {
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
-          <h3 className="text-base font-semibold text-gray-900">Resumen de ruta</h3>
+          <h3 className="text-base font-semibold text-gray-900">{titulo}</h3>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-400">
             <XIcon size={18} />
           </button>
@@ -695,6 +703,16 @@ function PedidosInsumosViewCompleta() {
   const [cargandoResumenRuta, setCargandoResumenRuta] = useState(false);
   const [errorResumenRuta, setErrorResumenRuta] = useState<string | null>(null);
 
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [cargandoQr, setCargandoQr] = useState(false);
+  const [errorQr, setErrorQr] = useState<string | null>(null);
+
+  const [showReporteModal, setShowReporteModal] = useState(false);
+  const [reporteUrl, setReporteUrl] = useState<string | null>(null);
+  const [cargandoReporte, setCargandoReporte] = useState(false);
+  const [errorReporte, setErrorReporte] = useState<string | null>(null);
+
   const [camiones, setCamiones] = useState<CamionModel[]>([]);
   const [pilotos, setPilotos] = useState<PilotoUsuario[]>([]);
   const [asignacionesDelDia, setAsignacionesDelDia] = useState<AsignacionTransporte[]>([]);
@@ -1010,6 +1028,53 @@ function PedidosInsumosViewCompleta() {
     setShowResumenRutaModal(false);
   };
 
+  // Solo tiene sentido mientras la ruta está EN_TRANSITO: el QR es para que
+  // el piloto lo imprima y lo lleve en la entrega física.
+  const handlePrevisualizarQr = async (rutaId: string, fecha: string) => {
+    setCargandoQr(true);
+    setErrorQr(null);
+
+    try {
+      const url = await previsualizarQrsRutaInsumos(rutaId, fecha);
+      setQrUrl(url);
+      setShowQrModal(true);
+    } catch (err) {
+      setErrorQr(err instanceof Error ? err.message : "Error al generar los códigos QR");
+    } finally {
+      setCargandoQr(false);
+    }
+  };
+
+  const handleCerrarQrModal = () => {
+    if (qrUrl) window.URL.revokeObjectURL(qrUrl);
+    setQrUrl(null);
+    setShowQrModal(false);
+  };
+
+  // Reporte de TODAS las rutas para fechaElegida, sin importar el estado ni
+  // si ya se procesó algo — no depende de rutaElegidaId, por eso siempre
+  // está habilitado (solo necesita una fecha).
+  const handleGenerarReporte = async () => {
+    setCargandoReporte(true);
+    setErrorReporte(null);
+
+    try {
+      const url = await previsualizarReporteDetalleInsumos(fechaElegida);
+      setReporteUrl(url);
+      setShowReporteModal(true);
+    } catch (err) {
+      setErrorReporte(err instanceof Error ? err.message : "Error al generar el reporte");
+    } finally {
+      setCargandoReporte(false);
+    }
+  };
+
+  const handleCerrarReporteModal = () => {
+    if (reporteUrl) window.URL.revokeObjectURL(reporteUrl);
+    setReporteUrl(null);
+    setShowReporteModal(false);
+  };
+
   const handleFirmarTicket = async () => {
     const rutaId = candado?.ruta_id || rutaElegidaId;
     const fecha = candado?.fecha || fechaElegida;
@@ -1119,16 +1184,29 @@ function PedidosInsumosViewCompleta() {
             </div>
           </div>
 
-          <Button
-            onClick={handleBuscarPreview}
-            disabled={loadingBusqueda || !rutaElegidaId || !fechaElegida}
-            variant="submit"
-            size="sm"
-            className="mb-4"
-          >
-            {loadingBusqueda ? <Loader2 size={14} className="animate-spin mr-1.5" /> : null}
-            Buscar
-          </Button>
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <Button
+              onClick={handleBuscarPreview}
+              disabled={loadingBusqueda || !rutaElegidaId || !fechaElegida}
+              variant="submit"
+              size="sm"
+            >
+              {loadingBusqueda ? <Loader2 size={14} className="animate-spin mr-1.5" /> : null}
+              Buscar
+            </Button>
+            <Button
+              onClick={handleGenerarReporte}
+              disabled={cargandoReporte || !fechaElegida}
+              variant="outline"
+              size="sm"
+            >
+              {cargandoReporte ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <FileText size={14} className="mr-1.5" />}
+              Generar Reporte
+            </Button>
+          </div>
+          {errorReporte && (
+            <p className="text-xs text-red-600 mb-3 flex items-center gap-1"><AlertCircle size={12} /> {errorReporte}</p>
+          )}
 
           {errorBusqueda && (
             <p className="text-xs text-red-600 mb-3 flex items-center gap-1"><AlertCircle size={12} /> {errorBusqueda}</p>
@@ -1235,6 +1313,20 @@ function PedidosInsumosViewCompleta() {
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+              {ESTADOS_CON_QR.includes(previewRuta.estado_general) && (
+                <div className="mb-3">
+                  <Button
+                    onClick={() => handlePrevisualizarQr(rutaElegidaId, fechaElegida)}
+                    disabled={cargandoQr}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {cargandoQr ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <QrCode size={14} className="mr-1.5" />}
+                    Generar QRs
+                  </Button>
+                  {errorQr && <p className="text-xs text-red-600 mt-1.5">{errorQr}</p>}
                 </div>
               )}
               <div className="space-y-2">
@@ -1385,11 +1477,26 @@ function PedidosInsumosViewCompleta() {
                       Resumen de ruta
                     </Button>
                   )}
+                  {pedidoRuta && ESTADOS_CON_QR.includes(pedidoRuta.estado_general) && (
+                    <Button
+                      onClick={() => handlePrevisualizarQr(candado?.ruta_id || rutaElegidaId, candado?.fecha || fechaElegida)}
+                      disabled={cargandoQr}
+                      size="sm"
+                      variant="outline"
+                    >
+                      {cargandoQr ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <QrCode size={14} className="mr-1.5" />}
+                      Generar QRs
+                    </Button>
+                  )}
                 </div>
               </div>
 
               {errorResumenRuta && (
                 <p className="text-xs text-red-600 mb-4 flex items-center gap-1"><AlertCircle size={12} /> {errorResumenRuta}</p>
+              )}
+
+              {errorQr && (
+                <p className="text-xs text-red-600 mb-4 flex items-center gap-1"><AlertCircle size={12} /> {errorQr}</p>
               )}
 
               {pedidoRuta?.estado_general === "VALIDADO" && (!pedidoRuta.camion_id || !pedidoRuta.piloto_id) && (
@@ -1444,6 +1551,14 @@ function PedidosInsumosViewCompleta() {
 
       {showResumenRutaModal && resumenRutaUrl && (
         <ResumenRutaPreviewModal url={resumenRutaUrl} onClose={handleCerrarResumenRutaModal} />
+      )}
+
+      {showQrModal && qrUrl && (
+        <ResumenRutaPreviewModal url={qrUrl} onClose={handleCerrarQrModal} titulo="Códigos QR de pedidos" />
+      )}
+
+      {showReporteModal && reporteUrl && (
+        <ResumenRutaPreviewModal url={reporteUrl} onClose={handleCerrarReporteModal} titulo="Detalle de Pedidos por Tienda" />
       )}
     </div>
   );

@@ -297,6 +297,53 @@ export async function previsualizarResumenRutaPollo(rutaId: string, fecha: strin
     return window.URL.createObjectURL(blob);
 }
 
+export async function previsualizarQrsRutaPollo(rutaId: string, fecha: string): Promise<string> {
+    const params = new URLSearchParams({ ruta_id: rutaId, fecha });
+    const response = await authFetch(`/pedido/generarQrsRutaPollo?${params.toString()}`);
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Error al generar los códigos QR");
+    }
+    const blob = await response.blob();
+    return window.URL.createObjectURL(blob);
+}
+
+export async function previsualizarQrsRutaInsumos(rutaId: string, fecha: string): Promise<string> {
+    const params = new URLSearchParams({ ruta_id: rutaId, fecha });
+    const response = await authFetch(`/pedido/generarQrsRutaInsumos?${params.toString()}`);
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Error al generar los códigos QR");
+    }
+    const blob = await response.blob();
+    return window.URL.createObjectURL(blob);
+}
+
+// Reporte de TODAS las rutas de la fecha, sin importar el estado ni si ya
+// se procesó algo — solo el detalle de lo que pide cada tienda, agrupado
+// por ruta, sin QR. Se puede generar en cualquier momento.
+export async function previsualizarReporteDetallePollo(fecha: string): Promise<string> {
+    const params = new URLSearchParams({ fecha });
+    const response = await authFetch(`/pedido/generarReporteDetallePollo?${params.toString()}`);
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Error al generar el reporte");
+    }
+    const blob = await response.blob();
+    return window.URL.createObjectURL(blob);
+}
+
+export async function previsualizarReporteDetalleInsumos(fecha: string): Promise<string> {
+    const params = new URLSearchParams({ fecha });
+    const response = await authFetch(`/pedido/generarReporteDetalleInsumos?${params.toString()}`);
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Error al generar el reporte");
+    }
+    const blob = await response.blob();
+    return window.URL.createObjectURL(blob);
+}
+
 export interface FirmarTicketResponse {
     success: boolean;
     ticket_id: string;
