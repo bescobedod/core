@@ -1,12 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, Loader2, AlertCircle, Store, Truck, Package, Filter, QrCode, X as XIcon } from "lucide-react";
+import { ChevronDown, Loader2, AlertCircle, Store, Truck, Package, Filter, QrCode, FileText, X as XIcon } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
-import { getPedidosPorDivision, previsualizarQrsRutaPollo, previsualizarQrsRutaInsumos } from "../api/PedidoPosApi";
+import {
+  getPedidosPorDivision,
+  previsualizarQrsRutaPollo,
+  previsualizarQrsRutaInsumos,
+  previsualizarReporteDetallePollo,
+  previsualizarReporteDetalleInsumos,
+  previsualizarReporteEnTransitoPollo,
+  previsualizarReporteEnTransitoInsumos,
+  descargarExcelReporteDetallePollo,
+  descargarExcelReporteDetalleInsumos,
+  descargarExcelReporteEnTransitoPollo,
+  descargarExcelReporteEnTransitoInsumos,
+  DivisionReporte,
+  FormatoReporte,
+} from "../api/PedidoPosApi";
+import { ReporteParametrosModal, FormatoReporteModal, ParametrosReporte } from "./ReporteParametrosModal";
 import { getMiDivision } from "../api/UserApi";
 import { PedidoPosItem, PedidoPosRuta, PedidoPosRutaInsumos } from "../types/PedidoPosModel";
 
@@ -91,14 +106,15 @@ function normalizarInsumos(rutas: PedidoPosRutaInsumos[]): RutaNormalizada[] {
 interface QrPreviewModalProps {
   url: string;
   onClose: () => void;
+  titulo: string;
 }
 
-function QrPreviewModal({ url, onClose }: QrPreviewModalProps) {
+function QrPreviewModal({ url, onClose, titulo }: QrPreviewModalProps) {
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
-          <h3 className="text-base font-semibold text-gray-900">Códigos QR de pedidos</h3>
+          <h3 className="text-base font-semibold text-gray-900">{titulo}</h3>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-400">
             <XIcon size={18} />
           </button>
@@ -141,6 +157,16 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [cargandoQrRutaId, setCargandoQrRutaId] = useState<string | null>(null);
   const [errorQr, setErrorQr] = useState<string | null>(null);
+  const [showReporteModal, setShowReporteModal] = useState(false);
+  const [reporteUrl, setReporteUrl] = useState<string | null>(null);
+  const [reporteTitulo, setReporteTitulo] = useState("Detalle de Pedidos por Tienda");
+  const [cargandoReporte, setCargandoReporte] = useState(false);
+  const [errorReporte, setErrorReporte] = useState<string | null>(null);
+  const [showParametrosReporte, setShowParametrosReporte] = useState(false);
+  const [showFormatoDetalle, setShowFormatoDetalle] = useState(false);
+  const [showFormatoEnTransito, setShowFormatoEnTransito] = useState(false);
+  const [cargandoEnTransito, setCargandoEnTransito] = useState(false);
+  const [errorEnTransito, setErrorEnTransito] = useState<string | null>(null);
 
   useEffect(() => {
     if (nivelPermiso !== "lectura_division") return;
@@ -229,6 +255,99 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
     setShowQrModal(false);
   };
 
+  // Reporte de las rutas de la fecha (resumen general + detalle), sin importar
+  // el estado. Un usuario lectura_division siempre usa SU división (el modal
+  // ni siquiera se la pregunta); con lectura elige en el modal.
+  const handleGenerarReporte = async (parametros: ParametrosReporte) => {
+    const division: DivisionReporte | undefined =
+      nivelPermiso === "lectura_division" ? (miDivision as "1" | "2" | null) ?? undefined : parametros.division;
+
+    if (nivelPermiso === "lectura_division" && !division) return;
+
+    setCargandoReporte(true);
+    setErrorReporte(null);
+
+    try {
+      if (parametros.formato === "excel") {
+        if (tipoPedido === "POLLO") {
+          await descargarExcelReporteDetallePollo(fecha, { division, muelles: parametros.muelles });
+        } else {
+          await descargarExcelReporteDetalleInsumos(fecha, { division });
+        }
+      } else {
+        const url =
+          tipoPedido === "POLLO"
+            ? await previsualizarReporteDetallePollo(fecha, { division, muelles: parametros.muelles })
+            : await previsualizarReporteDetalleInsumos(fecha, { division });
+        setReporteTitulo("Detalle de Pedidos por Tienda");
+        setReporteUrl(url);
+        setShowReporteModal(true);
+      }
+
+      setShowParametrosReporte(false);
+      setShowFormatoDetalle(false);
+    } catch (err) {
+      setErrorReporte(err instanceof Error ? err.message : "Error al generar el reporte");
+    } finally {
+      setCargandoReporte(false);
+    }
+  };
+
+  // Con lectura_division en Insumos no hay muelles ni división que elegir,
+  // así que solo se pregunta el formato (PDF o Excel).
+  const requiereParametros = tipoPedido === "POLLO" || nivelPermiso === "lectura";
+
+  const handleAbrirReporte = () => {
+    setErrorReporte(null);
+
+    if (requiereParametros) {
+      setShowParametrosReporte(true);
+    } else {
+      setShowFormatoDetalle(true);
+    }
+  };
+
+  // Pedidos EN_TRANSITO sin entregar, de cualquier fecha. lectura_division
+  // solo ve su división; lectura ve las dos (cada una en su sección).
+  const handleGenerarReporteEnTransito = async (formato: FormatoReporte) => {
+    const division = nivelPermiso === "lectura_division" ? ((miDivision as "1" | "2" | null) ?? undefined) : undefined;
+
+    if (nivelPermiso === "lectura_division" && !division) return;
+
+    setCargandoEnTransito(true);
+    setErrorEnTransito(null);
+
+    try {
+      if (formato === "excel") {
+        if (tipoPedido === "POLLO") {
+          await descargarExcelReporteEnTransitoPollo(division);
+        } else {
+          await descargarExcelReporteEnTransitoInsumos(division);
+        }
+      } else {
+        const url =
+          tipoPedido === "POLLO"
+            ? await previsualizarReporteEnTransitoPollo(division)
+            : await previsualizarReporteEnTransitoInsumos(division);
+        setReporteTitulo(`Pedidos en Tránsito — ${tipoPedido === "POLLO" ? "Pollo" : "Insumos"}`);
+        setReporteUrl(url);
+        setShowReporteModal(true);
+      }
+
+      setShowFormatoEnTransito(false);
+    } catch (err) {
+      setErrorEnTransito(err instanceof Error ? err.message : "Error al generar el reporte");
+    } finally {
+      setCargandoEnTransito(false);
+    }
+  };
+
+  const handleCerrarReporteModal = () => {
+    if (reporteUrl) window.URL.revokeObjectURL(reporteUrl);
+    setReporteUrl(null);
+    setShowReporteModal(false);
+  };
+
   const sinDivisionAsignada = nivelPermiso === "lectura_division" && !cargandoDivision && !miDivision;
 
   return (
@@ -287,6 +406,28 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
             >
               {cargando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Filter className="h-3.5 w-3.5" />}
               Buscar
+            </Button>
+
+            <Button
+              onClick={handleAbrirReporte}
+              disabled={cargandoReporte || !fecha || (nivelPermiso === "lectura_division" && (cargandoDivision || sinDivisionAsignada))}
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2"
+            >
+              {cargandoReporte ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+              Generar Reporte
+            </Button>
+
+            <Button
+              onClick={() => { setErrorEnTransito(null); setShowFormatoEnTransito(true); }}
+              disabled={nivelPermiso === "lectura_division" && (cargandoDivision || sinDivisionAsignada)}
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2"
+            >
+              <Truck className="h-3.5 w-3.5" />
+              Pedidos en tránsito
             </Button>
           </div>
 
@@ -426,7 +567,39 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
         )}
       </div>
 
-      {showQrModal && qrUrl && <QrPreviewModal url={qrUrl} onClose={handleCerrarQrModal} />}
+      {showQrModal && qrUrl && <QrPreviewModal url={qrUrl} onClose={handleCerrarQrModal} titulo="Códigos QR de pedidos" />}
+      {showParametrosReporte && (
+        <ReporteParametrosModal
+          tipoPedido={tipoPedido}
+          fecha={fecha}
+          mostrarDivision={nivelPermiso === "lectura"}
+          cargando={cargandoReporte}
+          error={errorReporte}
+          onGenerar={handleGenerarReporte}
+          onClose={() => setShowParametrosReporte(false)}
+        />
+      )}
+      {showFormatoDetalle && (
+        <FormatoReporteModal
+          titulo="Generar reporte"
+          cargando={cargandoReporte}
+          error={errorReporte}
+          onElegir={(formato) => handleGenerarReporte({ muelles: [], formato })}
+          onClose={() => setShowFormatoDetalle(false)}
+        />
+      )}
+      {showFormatoEnTransito && (
+        <FormatoReporteModal
+          titulo={`Pedidos en tránsito — ${tipoPedido === "POLLO" ? "Pollo" : "Insumos"}`}
+          cargando={cargandoEnTransito}
+          error={errorEnTransito}
+          onElegir={handleGenerarReporteEnTransito}
+          onClose={() => setShowFormatoEnTransito(false)}
+        />
+      )}
+      {showReporteModal && reporteUrl && (
+        <QrPreviewModal url={reporteUrl} onClose={handleCerrarReporteModal} titulo={reporteTitulo} />
+      )}
     </div>
   );
 }

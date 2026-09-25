@@ -28,7 +28,8 @@ import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { motion, AnimatePresence } from "motion/react";
-import { getPedidosPos, getComparativoStockPollo, enviarTransferenciaPollo, previsualizarTicketPollo, firmarTicketPollo, previsualizarResumenRutaPollo, previsualizarQrsRutaPollo, previsualizarReporteDetallePollo } from "../api/PedidoPosApi";
+import { getPedidosPos, getComparativoStockPollo, enviarTransferenciaPollo, previsualizarTicketPollo, firmarTicketPollo, previsualizarResumenRutaPollo, previsualizarQrsRutaPollo, previsualizarReporteDetallePollo, previsualizarReporteEnTransitoPollo, descargarExcelReporteDetallePollo, descargarExcelReporteEnTransitoPollo, FormatoReporte } from "../api/PedidoPosApi";
+import { ReporteParametrosModal, FormatoReporteModal, ParametrosReporte } from "./ReporteParametrosModal";
 import { guardarAsignacionCantidades } from "../api/AsignacionApi";
 import { PedidoPosRuta, PedidoPosTienda } from "../types/PedidoPosModel";
 import { ComparativoStockItem } from "../types/StockModel";
@@ -673,8 +674,13 @@ function PedidosPolloViewCompleta() {
 
   const [showReporteModal, setShowReporteModal] = useState(false);
   const [reporteUrl, setReporteUrl] = useState<string | null>(null);
+  const [reporteTitulo, setReporteTitulo] = useState("Detalle de Pedidos por Tienda");
   const [cargandoReporte, setCargandoReporte] = useState(false);
   const [errorReporte, setErrorReporte] = useState<string | null>(null);
+  const [showParametrosReporte, setShowParametrosReporte] = useState(false);
+  const [showFormatoEnTransito, setShowFormatoEnTransito] = useState(false);
+  const [cargandoEnTransito, setCargandoEnTransito] = useState(false);
+  const [errorEnTransito, setErrorEnTransito] = useState<string | null>(null);
 
   const [camiones, setCamiones] = useState<CamionModel[]>([]);
   const [pilotos, setPilotos] = useState<PilotoUsuario[]>([]);
@@ -1039,21 +1045,55 @@ function PedidosPolloViewCompleta() {
     setShowQrModal(false);
   };
 
-  // Reporte de TODAS las rutas para fechaElegida, sin importar el estado ni
-  // si ya se procesó algo — no depende de rutaElegidaId, por eso siempre
-  // está habilitado (solo necesita una fecha).
-  const handleGenerarReporte = async () => {
+  // Reporte de las rutas de fechaElegida, sin importar el estado ni si ya se
+  // procesó algo — no depende de rutaElegidaId, por eso el botón siempre está
+  // habilitado (solo necesita una fecha). Muelles y división se eligen en el
+  // modal de parámetros.
+  const handleGenerarReporte = async (parametros: ParametrosReporte) => {
     setCargandoReporte(true);
     setErrorReporte(null);
 
     try {
-      const url = await previsualizarReporteDetallePollo(fechaElegida);
-      setReporteUrl(url);
-      setShowReporteModal(true);
+      const opciones = { division: parametros.division, muelles: parametros.muelles };
+
+      if (parametros.formato === "excel") {
+        await descargarExcelReporteDetallePollo(fechaElegida, opciones);
+      } else {
+        const url = await previsualizarReporteDetallePollo(fechaElegida, opciones);
+        setReporteTitulo("Detalle de Pedidos por Tienda");
+        setReporteUrl(url);
+        setShowReporteModal(true);
+      }
+
+      setShowParametrosReporte(false);
     } catch (err) {
       setErrorReporte(err instanceof Error ? err.message : "Error al generar el reporte");
     } finally {
       setCargandoReporte(false);
+    }
+  };
+
+  // Pedidos EN_TRANSITO sin entregar, de cualquier fecha, en las dos
+  // divisiones (cada una en su sección), en PDF o Excel.
+  const handleGenerarReporteEnTransito = async (formato: FormatoReporte) => {
+    setCargandoEnTransito(true);
+    setErrorEnTransito(null);
+
+    try {
+      if (formato === "excel") {
+        await descargarExcelReporteEnTransitoPollo();
+      } else {
+        const url = await previsualizarReporteEnTransitoPollo();
+        setReporteTitulo("Pedidos en Tránsito — Pollo");
+        setReporteUrl(url);
+        setShowReporteModal(true);
+      }
+
+      setShowFormatoEnTransito(false);
+    } catch (err) {
+      setErrorEnTransito(err instanceof Error ? err.message : "Error al generar el reporte");
+    } finally {
+      setCargandoEnTransito(false);
     }
   };
 
@@ -1170,18 +1210,23 @@ function PedidosPolloViewCompleta() {
               Buscar
             </Button>
             <Button
-              onClick={handleGenerarReporte}
-              disabled={cargandoReporte || !fechaElegida}
+              onClick={() => { setErrorReporte(null); setShowParametrosReporte(true); }}
+              disabled={!fechaElegida}
               variant="outline"
               size="sm"
             >
-              {cargandoReporte ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <FileText size={14} className="mr-1.5" />}
+              <FileText size={14} className="mr-1.5" />
               Generar Reporte
             </Button>
+            <Button
+              onClick={() => { setErrorEnTransito(null); setShowFormatoEnTransito(true); }}
+              variant="outline"
+              size="sm"
+            >
+              <Truck size={14} className="mr-1.5" />
+              Pedidos en tránsito
+            </Button>
           </div>
-          {errorReporte && (
-            <p className="text-xs text-red-600 mb-3 flex items-center gap-1"><AlertCircle size={12} /> {errorReporte}</p>
-          )}
 
           {errorBusqueda && (
             <p className="text-xs text-red-600 mb-3 flex items-center gap-1"><AlertCircle size={12} /> {errorBusqueda}</p>
@@ -1538,8 +1583,30 @@ function PedidosPolloViewCompleta() {
         <ResumenRutaPreviewModal url={qrUrl} onClose={handleCerrarQrModal} titulo="Códigos QR de pedidos" />
       )}
 
+      {showParametrosReporte && (
+        <ReporteParametrosModal
+          tipoPedido="POLLO"
+          fecha={fechaElegida}
+          mostrarDivision
+          cargando={cargandoReporte}
+          error={errorReporte}
+          onGenerar={handleGenerarReporte}
+          onClose={() => setShowParametrosReporte(false)}
+        />
+      )}
+
+      {showFormatoEnTransito && (
+        <FormatoReporteModal
+          titulo="Pedidos en tránsito — Pollo"
+          cargando={cargandoEnTransito}
+          error={errorEnTransito}
+          onElegir={handleGenerarReporteEnTransito}
+          onClose={() => setShowFormatoEnTransito(false)}
+        />
+      )}
+
       {showReporteModal && reporteUrl && (
-        <ResumenRutaPreviewModal url={reporteUrl} onClose={handleCerrarReporteModal} titulo="Detalle de Pedidos por Tienda" />
+        <ResumenRutaPreviewModal url={reporteUrl} onClose={handleCerrarReporteModal} titulo={reporteTitulo} />
       )}
     </div>
   );

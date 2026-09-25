@@ -322,8 +322,19 @@ export async function previsualizarQrsRutaInsumos(rutaId: string, fecha: string)
 // Reporte de TODAS las rutas de la fecha, sin importar el estado ni si ya
 // se procesó algo — solo el detalle de lo que pide cada tienda, agrupado
 // por ruta, sin QR. Se puede generar en cualquier momento.
-export async function previsualizarReporteDetallePollo(fecha: string): Promise<string> {
+// '1,2' = las dos divisiones. muelles vacío/omitido = todos los muelles
+// (incluye pedidos aún sin ruta); solo aplica a Pollo.
+export type DivisionReporte = '1' | '2' | '1,2';
+
+export interface OpcionesReporteDetalle {
+    division?: DivisionReporte;
+    muelles?: string[];
+}
+
+export async function previsualizarReporteDetallePollo(fecha: string, opciones: OpcionesReporteDetalle = {}): Promise<string> {
     const params = new URLSearchParams({ fecha });
+    if (opciones.division) params.set('division', opciones.division);
+    if (opciones.muelles && opciones.muelles.length > 0) params.set('muelles', opciones.muelles.join(','));
     const response = await authFetch(`/pedido/generarReporteDetallePollo?${params.toString()}`);
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -333,8 +344,9 @@ export async function previsualizarReporteDetallePollo(fecha: string): Promise<s
     return window.URL.createObjectURL(blob);
 }
 
-export async function previsualizarReporteDetalleInsumos(fecha: string): Promise<string> {
+export async function previsualizarReporteDetalleInsumos(fecha: string, opciones: Pick<OpcionesReporteDetalle, 'division'> = {}): Promise<string> {
     const params = new URLSearchParams({ fecha });
+    if (opciones.division) params.set('division', opciones.division);
     const response = await authFetch(`/pedido/generarReporteDetalleInsumos?${params.toString()}`);
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -342,6 +354,93 @@ export async function previsualizarReporteDetalleInsumos(fecha: string): Promise
     }
     const blob = await response.blob();
     return window.URL.createObjectURL(blob);
+}
+
+// Pedidos EN_TRANSITO (aún sin entregar) de cualquier fecha, por división.
+// Sin `division` trae las dos divisiones, cada una en su sección; con una
+// sola (usuarios lectura_division) solo esa.
+async function descargarReporteEnTransito(ruta: string, division?: '1' | '2'): Promise<string> {
+    const params = new URLSearchParams();
+    if (division) params.set('division', division);
+
+    const response = await authFetch(`${ruta}?${params.toString()}`);
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Error al generar el reporte de pedidos en tránsito");
+    }
+    const blob = await response.blob();
+    return window.URL.createObjectURL(blob);
+}
+
+export function previsualizarReporteEnTransitoPollo(division?: '1' | '2'): Promise<string> {
+    return descargarReporteEnTransito('/pedido/generarReporteEnTransitoPollo', division);
+}
+
+export function previsualizarReporteEnTransitoInsumos(division?: '1' | '2'): Promise<string> {
+    return descargarReporteEnTransito('/pedido/generarReporteEnTransitoInsumos', division);
+}
+
+// ---- Versión en Excel de los mismos reportes (misma información que el PDF) ----
+// El nombre del archivo se arma aquí (no se lee de Content-Disposition porque
+// el navegador no expone ese header en peticiones entre orígenes distintos).
+export type FormatoReporte = 'pdf' | 'excel';
+
+function guardarArchivo(blob: Blob, nombre: string) {
+    const url = window.URL.createObjectURL(blob);
+    const enlace = document.createElement('a');
+    enlace.href = url;
+    enlace.download = nombre;
+    document.body.appendChild(enlace);
+    enlace.click();
+    enlace.remove();
+    window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+}
+
+async function descargarExcel(ruta: string, params: URLSearchParams, nombre: string): Promise<void> {
+    params.set('formato', 'excel');
+
+    const response = await authFetch(`${ruta}?${params.toString()}`);
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Error al generar el Excel");
+    }
+
+    guardarArchivo(await response.blob(), nombre);
+}
+
+function paramsReporteDetalle(fecha: string, opciones: OpcionesReporteDetalle): URLSearchParams {
+    const params = new URLSearchParams({ fecha });
+    if (opciones.division) params.set('division', opciones.division);
+    if (opciones.muelles && opciones.muelles.length > 0) params.set('muelles', opciones.muelles.join(','));
+    return params;
+}
+
+export function descargarExcelReporteDetallePollo(fecha: string, opciones: OpcionesReporteDetalle = {}): Promise<void> {
+    return descargarExcel(
+        '/pedido/generarReporteDetallePollo',
+        paramsReporteDetalle(fecha, opciones),
+        `detalle_pedidos_pollo_${fecha}.xlsx`
+    );
+}
+
+export function descargarExcelReporteDetalleInsumos(fecha: string, opciones: Pick<OpcionesReporteDetalle, 'division'> = {}): Promise<void> {
+    return descargarExcel(
+        '/pedido/generarReporteDetalleInsumos',
+        paramsReporteDetalle(fecha, { division: opciones.division }),
+        `detalle_pedidos_insumos_${fecha}.xlsx`
+    );
+}
+
+export function descargarExcelReporteEnTransitoPollo(division?: '1' | '2'): Promise<void> {
+    const params = new URLSearchParams();
+    if (division) params.set('division', division);
+    return descargarExcel('/pedido/generarReporteEnTransitoPollo', params, 'pedidos_pollo_en_transito.xlsx');
+}
+
+export function descargarExcelReporteEnTransitoInsumos(division?: '1' | '2'): Promise<void> {
+    const params = new URLSearchParams();
+    if (division) params.set('division', division);
+    return descargarExcel('/pedido/generarReporteEnTransitoInsumos', params, 'pedidos_insumos_en_transito.xlsx');
 }
 
 export interface FirmarTicketResponse {
