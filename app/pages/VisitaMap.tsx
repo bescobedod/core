@@ -29,9 +29,12 @@ function AjustarVista({ puntos }: { puntos: Punto[] }) {
       return;
     }
 
-    const limites = new google.maps.LatLngBounds();
-    puntos.forEach((p) => limites.extend(p));
-    map.fitBounds(limites, 60);
+    const lats = puntos.map((p) => p.lat);
+    const lngs = puntos.map((p) => p.lng);
+    map.fitBounds(
+      { north: Math.max(...lats), south: Math.min(...lats), east: Math.max(...lngs), west: Math.min(...lngs) },
+      60
+    );
   }, [map, puntos]);
 
   return null;
