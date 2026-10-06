@@ -93,6 +93,7 @@ function EstadoPedidoBadge({ estado }: { estado: string }) {
 
 interface TicketPreviewModalProps {
   ticketUrl: string;
+  puedeFirmar: boolean;
   firmando: boolean;
   firmado: boolean;
   error: string | null;
@@ -100,7 +101,7 @@ interface TicketPreviewModalProps {
   onFirmar: () => void;
 }
 
-function TicketPreviewModal({ ticketUrl, firmando, firmado, error, onClose, onFirmar }: TicketPreviewModalProps) {
+function TicketPreviewModal({ ticketUrl, puedeFirmar, firmando, firmado, error, onClose, onFirmar }: TicketPreviewModalProps) {
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -119,6 +120,11 @@ function TicketPreviewModal({ ticketUrl, firmando, firmado, error, onClose, onFi
           <div className="px-6 py-4 border-t border-gray-100 flex items-center gap-2 bg-green-50 shrink-0">
             <CheckCircle2 size={16} className="text-green-600" />
             <p className="text-sm text-green-700">Ticket firmado y enviado.</p>
+          </div>
+        ) : !puedeFirmar ? (
+          <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-2 shrink-0">
+            <p className="text-xs text-gray-400">Esta ruta ya no está en tránsito — el ticket queda solo para consulta.</p>
+            <Button onClick={onClose} variant="cancel" size="sm">Cerrar</Button>
           </div>
         ) : (
           <div className="px-6 py-4 border-t border-gray-100 shrink-0">
@@ -416,6 +422,7 @@ function StoreCard({ tienda }: { tienda: PedidoPosTiendaInsumos }) {
         <span className="text-sm text-gray-700 flex-1 truncate">
           {tienda.nombre_tienda || tienda.codigo_tienda || "Tienda sin identificar"}
         </span>
+        <span className="text-xs text-gray-400 shrink-0">{principal.numero_pedido}</span>
         <EstadoPedidoBadge estado={principal.estado} />
         <span className="text-xs text-gray-400 shrink-0">{principal.items.length} ítems</span>
         {tienda.activo_fijo && (
@@ -693,6 +700,7 @@ function PedidosInsumosViewCompleta() {
 
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [ticketUrl, setTicketUrl] = useState<string | null>(null);
+  const [ticketPuedeFirmar, setTicketPuedeFirmar] = useState(false);
   const [cargandoTicket, setCargandoTicket] = useState(false);
   const [errorTicket, setErrorTicket] = useState<string | null>(null);
   const [firmandoTicket, setFirmandoTicket] = useState(false);
@@ -986,11 +994,12 @@ function PedidosInsumosViewCompleta() {
     }
   };
 
-  const handlePrevisualizarTicket = async (rutaId: string, fecha: string) => {
+  const handlePrevisualizarTicket = async (rutaId: string, fecha: string, puedeFirmar: boolean) => {
     setCargandoTicket(true);
     setErrorTicket(null);
     setTicketFirmado(false);
     setErrorFirmarTicket(null);
+    setTicketPuedeFirmar(puedeFirmar);
 
     try {
       const url = await previsualizarTicketInsumos(rutaId, fecha);
@@ -1279,11 +1288,11 @@ function PedidosInsumosViewCompleta() {
                   <span className="flex items-center gap-1"><Truck size={12} className="text-gray-400" /> {previewRuta.camion_placa || "Sin camión"}</span>
                 </div>
               )}
-              {previewRuta.estado_general === "EN_TRANSITO" && (
+              {ESTADOS_CON_QR.includes(previewRuta.estado_general) && (
                 <div className="mb-3">
                   <div className="flex items-center gap-2">
                     <Button
-                      onClick={() => handlePrevisualizarTicket(rutaElegidaId, fechaElegida)}
+                      onClick={() => handlePrevisualizarTicket(rutaElegidaId, fechaElegida, previewRuta.estado_general === "EN_TRANSITO")}
                       disabled={cargandoTicket}
                       size="sm"
                       variant="outline"
@@ -1292,15 +1301,17 @@ function PedidosInsumosViewCompleta() {
                       {cargandoTicket ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <FileText size={14} className="mr-1.5" />}
                       Ver ticket
                     </Button>
-                    <Button
-                      onClick={() => { setTrasladoAbierto(v => !v); setTrasladoError(null); }}
-                      size="sm"
-                      variant="outline"
-                      className="border-amber-300 text-amber-700 hover:bg-amber-50"
-                    >
-                      <Truck size={14} className="mr-1.5" />
-                      Trasladar Envío
-                    </Button>
+                    {previewRuta.estado_general === "EN_TRANSITO" && (
+                      <Button
+                        onClick={() => { setTrasladoAbierto(v => !v); setTrasladoError(null); }}
+                        size="sm"
+                        variant="outline"
+                        className="border-amber-300 text-amber-700 hover:bg-amber-50"
+                      >
+                        <Truck size={14} className="mr-1.5" />
+                        Trasladar Envío
+                      </Button>
+                    )}
                     <Button
                       onClick={() => handlePrevisualizarResumenRuta(rutaElegidaId, fechaElegida)}
                       disabled={cargandoResumenRuta}
@@ -1314,7 +1325,7 @@ function PedidosInsumosViewCompleta() {
                   {errorTicket && <p className="text-xs text-red-600 mt-1.5">{errorTicket}</p>}
                   {errorResumenRuta && <p className="text-xs text-red-600 mt-1.5">{errorResumenRuta}</p>}
 
-                  {trasladoAbierto && (
+                  {trasladoAbierto && previewRuta.estado_general === "EN_TRANSITO" && (
                     <div className="mt-3 p-3 border border-amber-200 rounded-lg bg-amber-50/50 space-y-2">
                       <p className="text-xs font-medium text-amber-700">
                         Cambia el piloto/camión de este envío en tránsito, sin alterar nada más.
@@ -1376,7 +1387,7 @@ function PedidosInsumosViewCompleta() {
               )}
               <div className="space-y-2">
                 {previewRuta.tiendas.map(tienda => (
-                  <StoreCard key={tienda.codigo_tienda || `${tienda.insumos?.pedido_id}-${tienda.activo_fijo?.pedido_id}`} tienda={tienda} />
+                  <StoreCard key={`${tienda.insumos?.pedido_id ?? ""}-${tienda.activo_fijo?.pedido_id ?? ""}`} tienda={tienda} />
                 ))}
               </div>
             </div>
@@ -1558,7 +1569,7 @@ function PedidosInsumosViewCompleta() {
                 <p className="text-xs text-gray-400 mb-3">{pedidoRuta.tiendas.length} tienda{pedidoRuta.tiendas.length !== 1 ? "s" : ""}</p>
                 <div className="space-y-2.5">
                   {pedidoRuta.tiendas.map(tienda => (
-                    <StoreCard key={tienda.codigo_tienda || `${tienda.insumos?.pedido_id}-${tienda.activo_fijo?.pedido_id}`} tienda={tienda} />
+                    <StoreCard key={`${tienda.insumos?.pedido_id ?? ""}-${tienda.activo_fijo?.pedido_id ?? ""}`} tienda={tienda} />
                   ))}
                 </div>
               </div>
@@ -1586,6 +1597,7 @@ function PedidosInsumosViewCompleta() {
       {showTicketModal && ticketUrl && (
         <TicketPreviewModal
           ticketUrl={ticketUrl}
+          puedeFirmar={ticketPuedeFirmar}
           firmando={firmandoTicket}
           firmado={ticketFirmado}
           error={errorFirmarTicket}

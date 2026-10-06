@@ -40,7 +40,8 @@ const viewMap: Record<string, string> = {
   MenuPermisosView: 'menu-permisos',
   UsuarioMuellePolloView: 'usuario-muelle-pollo',
   PedidosPolloLecturaView: 'reporte-pedidos-pollo',
-  PedidosInsumoLecturaView: 'reporte-pedidos-insumo'
+  PedidosInsumoLecturaView: 'reporte-pedidos-insumo',
+  VisitasView: 'visitas'
 };
 
 function getIcon(name: string) {

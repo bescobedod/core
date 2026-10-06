@@ -86,11 +86,14 @@ function normalizarPollo(rutas: PedidoPosRuta[]): RutaNormalizada[] {
 }
 
 function normalizarInsumos(rutas: PedidoPosRutaInsumos[]): RutaNormalizada[] {
-  return rutas.map((r, idx) => ({
-    ruta_id: r.ruta_id || `${r.nombre_ruta}-${idx}`,
-    nombre_ruta: r.nombre_ruta,
-    estado_general: r.estado_general,
-    tiendas: r.tiendas.map((t) => {
+  return rutas.map((r, idx) => {
+    // Si una tienda tiene dos pedidos del mismo tipo para la misma ruta+fecha,
+    // el backend los devuelve en tarjetas separadas; aquí se agrupan por
+    // codigo_tienda para mostrar una sola fila con todos sus pedidos.
+    const tiendasPorCodigo = new Map<string, TiendaNormalizada>();
+
+    r.tiendas.forEach((t) => {
+      const codigo = t.codigo_tienda || "";
       const pedidos: PedidoNormalizado[] = [];
       if (t.insumos) {
         pedidos.push({ label: "Insumos", numero_pedido: t.insumos.numero_pedido, estado: t.insumos.estado, items: t.insumos.items });
@@ -98,9 +101,22 @@ function normalizarInsumos(rutas: PedidoPosRutaInsumos[]): RutaNormalizada[] {
       if (t.activo_fijo) {
         pedidos.push({ label: "Activo Fijo", numero_pedido: t.activo_fijo.numero_pedido, estado: t.activo_fijo.estado, items: t.activo_fijo.items });
       }
-      return { codigo_tienda: t.codigo_tienda || "", nombre_tienda: t.nombre_tienda || "—", pedidos };
-    }),
-  }));
+
+      const existente = tiendasPorCodigo.get(codigo);
+      if (existente) {
+        existente.pedidos.push(...pedidos);
+      } else {
+        tiendasPorCodigo.set(codigo, { codigo_tienda: codigo, nombre_tienda: t.nombre_tienda || "—", pedidos });
+      }
+    });
+
+    return {
+      ruta_id: r.ruta_id || `${r.nombre_ruta}-${idx}`,
+      nombre_ruta: r.nombre_ruta,
+      estado_general: r.estado_general,
+      tiendas: Array.from(tiendasPorCodigo.values()),
+    };
+  });
 }
 
 interface QrPreviewModalProps {

@@ -33,6 +33,7 @@ import { MenuPermisosView } from "./pages/MenuPermisosView";
 import { UsuarioMuellePolloView } from "./pages/UsuarioMuellePolloView";
 import { PedidosPolloLecturaView } from "./pages/PedidosPolloLecturaView";
 import { PedidosInsumoLecturaView } from "./pages/PedidosInsumoLecturaView";
+import { VisitasView } from "./pages/VisitasView";
 
 type View =
   "login"
@@ -59,7 +60,8 @@ type View =
   | "menu-permisos"
   | "usuario-muelle-pollo"
   | "reporte-pedidos-pollo"
-  | "reporte-pedidos-insumo";
+  | "reporte-pedidos-insumo"
+  | "visitas";
 
 export default function App() {
   const [isClient, setIsClient] = useState(false);
@@ -305,6 +307,7 @@ export default function App() {
             {currentView === "piloto-cliente-sap-insumos" && <PilotoClienteSapInsumoView />}
             {currentView === "menu-permisos" && <MenuPermisosView />}
             {currentView === "usuario-muelle-pollo" && <UsuarioMuellePolloView />}
+            {currentView === "visitas" && <VisitasView />}
           </div>
         </div>
         <div className="hidden lg:block w-64 bg-white shadow-2xl border-l border-gray-200 flex-shrink-0 fixed top-[100px] right-0 bottom-0 h-[calc(100vh-80px)]">

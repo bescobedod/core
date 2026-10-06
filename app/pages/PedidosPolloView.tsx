@@ -94,6 +94,7 @@ function EstadoPedidoBadge({ estado }: { estado: string }) {
 
 interface TicketPreviewModalProps {
   ticketUrl: string;
+  puedeFirmar: boolean;
   firmando: boolean;
   firmado: boolean;
   error: string | null;
@@ -101,7 +102,7 @@ interface TicketPreviewModalProps {
   onFirmar: () => void;
 }
 
-function TicketPreviewModal({ ticketUrl, firmando, firmado, error, onClose, onFirmar }: TicketPreviewModalProps) {
+function TicketPreviewModal({ ticketUrl, puedeFirmar, firmando, firmado, error, onClose, onFirmar }: TicketPreviewModalProps) {
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -120,6 +121,11 @@ function TicketPreviewModal({ ticketUrl, firmando, firmado, error, onClose, onFi
           <div className="px-6 py-4 border-t border-gray-100 flex items-center gap-2 bg-green-50 shrink-0">
             <CheckCircle2 size={16} className="text-green-600" />
             <p className="text-sm text-green-700">Ticket firmado y enviado.</p>
+          </div>
+        ) : !puedeFirmar ? (
+          <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-2 shrink-0">
+            <p className="text-xs text-gray-400">Esta ruta ya no está en tránsito — el ticket queda solo para consulta.</p>
+            <Button onClick={onClose} variant="cancel" size="sm">Cerrar</Button>
           </div>
         ) : (
           <div className="px-6 py-4 border-t border-gray-100 shrink-0">
@@ -385,6 +391,7 @@ function StoreCard({ tienda }: { tienda: PedidoPosTienda }) {
         <span className="text-sm text-gray-700 flex-1 truncate">
           {tienda.nombre_tienda || tienda.codigo_tienda || "Tienda sin identificar"}
         </span>
+        <span className="text-xs text-gray-400 shrink-0">{tienda.numero_pedido}</span>
         <EstadoPedidoBadge estado={tienda.estado} />
         <span className="text-xs text-gray-400 shrink-0">{tienda.items.length} ítems</span>
         {open ? <ChevronUp size={15} className="text-gray-400 shrink-0" /> : <ChevronDown size={15} className="text-gray-400 shrink-0" />}
@@ -656,6 +663,7 @@ function PedidosPolloViewCompleta() {
 
   const [showTicketModal, setShowTicketModal] = useState(false);
   const [ticketUrl, setTicketUrl] = useState<string | null>(null);
+  const [ticketPuedeFirmar, setTicketPuedeFirmar] = useState(false);
   const [cargandoTicket, setCargandoTicket] = useState(false);
   const [errorTicket, setErrorTicket] = useState<string | null>(null);
   const [firmandoTicket, setFirmandoTicket] = useState(false);
@@ -957,11 +965,12 @@ function PedidosPolloViewCompleta() {
     }
   };
 
-  const handlePrevisualizarTicket = async (rutaId: string, fecha: string) => {
+  const handlePrevisualizarTicket = async (rutaId: string, fecha: string, puedeFirmar: boolean) => {
     setCargandoTicket(true);
     setErrorTicket(null);
     setTicketFirmado(false);
     setErrorFirmarTicket(null);
+    setTicketPuedeFirmar(puedeFirmar);
 
     try {
       const url = await previsualizarTicketPollo(rutaId, fecha);
@@ -1254,11 +1263,11 @@ function PedidosPolloViewCompleta() {
                   <span className="flex items-center gap-1"><Truck size={12} className="text-gray-400" /> {previewRuta.camion_placa || "Sin camión"}</span>
                 </div>
               )}
-              {previewRuta.estado_general === "EN_TRANSITO" && (
+              {ESTADOS_CON_QR.includes(previewRuta.estado_general) && (
                 <div className="mb-3">
                   <div className="flex items-center gap-2">
                     <Button
-                      onClick={() => handlePrevisualizarTicket(rutaElegidaId, fechaElegida)}
+                      onClick={() => handlePrevisualizarTicket(rutaElegidaId, fechaElegida, previewRuta.estado_general === "EN_TRANSITO")}
                       disabled={cargandoTicket}
                       size="sm"
                       variant="submit"
@@ -1266,14 +1275,16 @@ function PedidosPolloViewCompleta() {
                       {cargandoTicket ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <FileText size={14} className="mr-1.5" />}
                       Ver ticket
                     </Button>
-                    <Button
-                      onClick={() => { setTrasladoAbierto(v => !v); setTrasladoError(null); }}
-                      size="sm"
-                      variant="alert"
-                    >
-                      <Truck size={14} className="mr-1.5" />
-                      Trasladar Envío
-                    </Button>
+                    {previewRuta.estado_general === "EN_TRANSITO" && (
+                      <Button
+                        onClick={() => { setTrasladoAbierto(v => !v); setTrasladoError(null); }}
+                        size="sm"
+                        variant="alert"
+                      >
+                        <Truck size={14} className="mr-1.5" />
+                        Trasladar Envío
+                      </Button>
+                    )}
                     <Button
                       onClick={() => handlePrevisualizarResumenRuta(rutaElegidaId, fechaElegida)}
                       disabled={cargandoResumenRuta}
@@ -1287,7 +1298,7 @@ function PedidosPolloViewCompleta() {
                   {errorTicket && <p className="text-xs text-red-600 mt-1.5">{errorTicket}</p>}
                   {errorResumenRuta && <p className="text-xs text-red-600 mt-1.5">{errorResumenRuta}</p>}
 
-                  {trasladoAbierto && (
+                  {trasladoAbierto && previewRuta.estado_general === "EN_TRANSITO" && (
                     <div className="mt-3 p-3 border border-yellow-600 rounded-lg bg-amber-50/50 space-y-2">
                       <p className="text-xs font-medium text-amber-700">
                         Cambia el piloto/camión de este envío en tránsito, sin alterar nada más.
@@ -1567,6 +1578,7 @@ function PedidosPolloViewCompleta() {
       {showTicketModal && ticketUrl && (
         <TicketPreviewModal
           ticketUrl={ticketUrl}
+          puedeFirmar={ticketPuedeFirmar}
           firmando={firmandoTicket}
           firmado={ticketFirmado}
           error={errorFirmarTicket}
