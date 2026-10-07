@@ -179,7 +179,6 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
   const [cargandoReporte, setCargandoReporte] = useState(false);
   const [errorReporte, setErrorReporte] = useState<string | null>(null);
   const [showParametrosReporte, setShowParametrosReporte] = useState(false);
-  const [showFormatoDetalle, setShowFormatoDetalle] = useState(false);
   const [showFormatoEnTransito, setShowFormatoEnTransito] = useState(false);
   const [cargandoEnTransito, setCargandoEnTransito] = useState(false);
   const [errorEnTransito, setErrorEnTransito] = useState<string | null>(null);
@@ -284,24 +283,29 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
     setErrorReporte(null);
 
     try {
+      // Con "Búsqueda avanzada" la fecha (o el rango) y los productos vienen
+      // del modal; sin ella se usa la fecha de la vista, como siempre.
+      const fechaReporte = parametros.fechaDesde ?? fecha;
+      const avanzadas = { fechaHasta: parametros.fechaHasta, productos: parametros.productos };
+      const esRango = !!parametros.fechaHasta && parametros.fechaHasta > fechaReporte;
+
       if (parametros.formato === "excel") {
         if (tipoPedido === "POLLO") {
-          await descargarExcelReporteDetallePollo(fecha, { division, muelles: parametros.muelles });
+          await descargarExcelReporteDetallePollo(fechaReporte, { division, muelles: parametros.muelles, ...avanzadas });
         } else {
-          await descargarExcelReporteDetalleInsumos(fecha, { division });
+          await descargarExcelReporteDetalleInsumos(fechaReporte, { division, ...avanzadas });
         }
       } else {
         const url =
           tipoPedido === "POLLO"
-            ? await previsualizarReporteDetallePollo(fecha, { division, muelles: parametros.muelles })
-            : await previsualizarReporteDetalleInsumos(fecha, { division });
-        setReporteTitulo("Detalle de Pedidos por Tienda");
+            ? await previsualizarReporteDetallePollo(fechaReporte, { division, muelles: parametros.muelles, ...avanzadas })
+            : await previsualizarReporteDetalleInsumos(fechaReporte, { division, ...avanzadas });
+        setReporteTitulo(esRango ? "Detalle de Pedidos por Rango de Fechas" : "Detalle de Pedidos por Tienda");
         setReporteUrl(url);
         setShowReporteModal(true);
       }
 
       setShowParametrosReporte(false);
-      setShowFormatoDetalle(false);
     } catch (err) {
       setErrorReporte(err instanceof Error ? err.message : "Error al generar el reporte");
     } finally {
@@ -309,18 +313,9 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
     }
   };
 
-  // Con lectura_division en Insumos no hay muelles ni división que elegir,
-  // así que solo se pregunta el formato (PDF o Excel).
-  const requiereParametros = tipoPedido === "POLLO" || nivelPermiso === "lectura";
-
   const handleAbrirReporte = () => {
     setErrorReporte(null);
-
-    if (requiereParametros) {
-      setShowParametrosReporte(true);
-    } else {
-      setShowFormatoDetalle(true);
-    }
+    setShowParametrosReporte(true);
   };
 
   // Pedidos EN_TRANSITO sin entregar, de cualquier fecha. lectura_division
@@ -593,15 +588,6 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
           error={errorReporte}
           onGenerar={handleGenerarReporte}
           onClose={() => setShowParametrosReporte(false)}
-        />
-      )}
-      {showFormatoDetalle && (
-        <FormatoReporteModal
-          titulo="Generar reporte"
-          cargando={cargandoReporte}
-          error={errorReporte}
-          onElegir={(formato) => handleGenerarReporte({ muelles: [], formato })}
-          onClose={() => setShowFormatoDetalle(false)}
         />
       )}
       {showFormatoEnTransito && (

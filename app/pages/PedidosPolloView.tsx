@@ -1063,13 +1063,22 @@ function PedidosPolloViewCompleta() {
     setErrorReporte(null);
 
     try {
-      const opciones = { division: parametros.division, muelles: parametros.muelles };
+      // Con "Búsqueda avanzada" la fecha (o el rango) y los productos vienen
+      // del modal; sin ella se usa la fecha elegida en la vista, como siempre.
+      const fechaReporte = parametros.fechaDesde ?? fechaElegida;
+      const opciones = {
+        division: parametros.division,
+        muelles: parametros.muelles,
+        fechaHasta: parametros.fechaHasta,
+        productos: parametros.productos,
+      };
+      const esRango = !!parametros.fechaHasta && parametros.fechaHasta > fechaReporte;
 
       if (parametros.formato === "excel") {
-        await descargarExcelReporteDetallePollo(fechaElegida, opciones);
+        await descargarExcelReporteDetallePollo(fechaReporte, opciones);
       } else {
-        const url = await previsualizarReporteDetallePollo(fechaElegida, opciones);
-        setReporteTitulo("Detalle de Pedidos por Tienda");
+        const url = await previsualizarReporteDetallePollo(fechaReporte, opciones);
+        setReporteTitulo(esRango ? "Detalle de Pedidos por Rango de Fechas" : "Detalle de Pedidos por Tienda");
         setReporteUrl(url);
         setShowReporteModal(true);
       }

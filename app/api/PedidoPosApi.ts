@@ -329,12 +329,33 @@ export type DivisionReporte = '1' | '2' | '1,2';
 export interface OpcionesReporteDetalle {
     division?: DivisionReporte;
     muelles?: string[];
+    // Búsqueda avanzada. `fecha` es el inicio; fechaHasta (si es posterior)
+    // genera el reporte por rango, distinto al de una sola fecha. productos
+    // vacío/omitido = todos.
+    fechaHasta?: string;
+    productos?: string[];
+}
+
+export interface ProductoReporte {
+    codigo_producto: string;
+    descripcion_producto: string;
+    unidad_medida: string | null;
+}
+
+// Productos que han aparecido en pedidos de ese tipo (INSUMOS incluye Activo
+// Fijo), para elegir cuáles incluir en la búsqueda avanzada del reporte.
+export async function getProductosReporte(tipoPedido: 'POLLO' | 'INSUMOS'): Promise<ProductoReporte[]> {
+    const params = new URLSearchParams({ tipo_pedido: tipoPedido });
+    const response = await authFetch(`/pedido/getProductosReporte?${params.toString()}`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.details || data.error || "Error al obtener los productos");
+    }
+    return data.productos;
 }
 
 export async function previsualizarReporteDetallePollo(fecha: string, opciones: OpcionesReporteDetalle = {}): Promise<string> {
-    const params = new URLSearchParams({ fecha });
-    if (opciones.division) params.set('division', opciones.division);
-    if (opciones.muelles && opciones.muelles.length > 0) params.set('muelles', opciones.muelles.join(','));
+    const params = paramsReporteDetalle(fecha, opciones);
     const response = await authFetch(`/pedido/generarReporteDetallePollo?${params.toString()}`);
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -344,9 +365,8 @@ export async function previsualizarReporteDetallePollo(fecha: string, opciones: 
     return window.URL.createObjectURL(blob);
 }
 
-export async function previsualizarReporteDetalleInsumos(fecha: string, opciones: Pick<OpcionesReporteDetalle, 'division'> = {}): Promise<string> {
-    const params = new URLSearchParams({ fecha });
-    if (opciones.division) params.set('division', opciones.division);
+export async function previsualizarReporteDetalleInsumos(fecha: string, opciones: Omit<OpcionesReporteDetalle, 'muelles'> = {}): Promise<string> {
+    const params = paramsReporteDetalle(fecha, opciones);
     const response = await authFetch(`/pedido/generarReporteDetalleInsumos?${params.toString()}`);
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -412,22 +432,30 @@ function paramsReporteDetalle(fecha: string, opciones: OpcionesReporteDetalle): 
     const params = new URLSearchParams({ fecha });
     if (opciones.division) params.set('division', opciones.division);
     if (opciones.muelles && opciones.muelles.length > 0) params.set('muelles', opciones.muelles.join(','));
+    if (opciones.fechaHasta) params.set('fecha_hasta', opciones.fechaHasta);
+    if (opciones.productos && opciones.productos.length > 0) params.set('productos', opciones.productos.join(','));
     return params;
+}
+
+// Mismo criterio que el backend: el sufijo de rango solo va si el fin es
+// posterior al inicio.
+function sufijoRango(fecha: string, opciones: OpcionesReporteDetalle): string {
+    return opciones.fechaHasta && opciones.fechaHasta > fecha ? `_a_${opciones.fechaHasta}` : '';
 }
 
 export function descargarExcelReporteDetallePollo(fecha: string, opciones: OpcionesReporteDetalle = {}): Promise<void> {
     return descargarExcel(
         '/pedido/generarReporteDetallePollo',
         paramsReporteDetalle(fecha, opciones),
-        `detalle_pedidos_pollo_${fecha}.xlsx`
+        `detalle_pedidos_pollo_${fecha}${sufijoRango(fecha, opciones)}.xlsx`
     );
 }
 
-export function descargarExcelReporteDetalleInsumos(fecha: string, opciones: Pick<OpcionesReporteDetalle, 'division'> = {}): Promise<void> {
+export function descargarExcelReporteDetalleInsumos(fecha: string, opciones: Omit<OpcionesReporteDetalle, 'muelles'> = {}): Promise<void> {
     return descargarExcel(
         '/pedido/generarReporteDetalleInsumos',
-        paramsReporteDetalle(fecha, { division: opciones.division }),
-        `detalle_pedidos_insumos_${fecha}.xlsx`
+        paramsReporteDetalle(fecha, opciones),
+        `detalle_pedidos_insumos_${fecha}${sufijoRango(fecha, opciones)}.xlsx`
     );
 }
 
