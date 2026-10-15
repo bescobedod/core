@@ -142,6 +142,7 @@ export interface BuscarPedidosActivoFijoResponse {
 }
 
 export interface BuscarPedidosActivoFijoFiltros {
+    id_tienda?: string | number;
     codigo_tienda: string;
     fecha?: string;
     fecha_inicio?: string;
@@ -153,6 +154,7 @@ export interface BuscarPedidosActivoFijoFiltros {
 export async function buscarPedidosActivoFijo(filtros: BuscarPedidosActivoFijoFiltros): Promise<BuscarPedidosActivoFijoResponse> {
     const paramsObj: Record<string, string> = { codigo_tienda: filtros.codigo_tienda };
 
+    if (filtros.id_tienda) paramsObj.id_tienda = String(filtros.id_tienda);
     if (filtros.fecha) paramsObj.fecha = filtros.fecha;
     if (filtros.fecha_inicio) paramsObj.fecha_inicio = filtros.fecha_inicio;
     if (filtros.fecha_fin) paramsObj.fecha_fin = filtros.fecha_fin;

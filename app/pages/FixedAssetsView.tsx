@@ -191,6 +191,7 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
 
     try {
       const respuesta = await buscarPedidosActivoFijo({
+        id_tienda: tienda.id_tienda,
         codigo_tienda: tienda.codigo_tienda,
         fecha: dateFilterType === "single" ? singleDate : undefined,
         fecha_inicio: dateFilterType === "range" ? startDate : undefined,
