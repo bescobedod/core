@@ -30,6 +30,7 @@ import { Input } from "../ui/input";
 import { motion, AnimatePresence } from "motion/react";
 import { getPedidosPos, getComparativoStockPollo, enviarTransferenciaPollo, previsualizarTicketPollo, firmarTicketPollo, previsualizarResumenRutaPollo, previsualizarQrsRutaPollo, previsualizarReporteDetallePollo, previsualizarReporteEnTransitoPollo, descargarExcelReporteDetallePollo, descargarExcelReporteEnTransitoPollo, FormatoReporte } from "../api/PedidoPosApi";
 import { ReporteParametrosModal, FormatoReporteModal, ParametrosReporte } from "./ReporteParametrosModal";
+import { CambiarFechaPedidoModal, BotonCambiarFecha, PedidoCambioFecha } from "./CambiarFechaPedidoModal";
 import { guardarAsignacionCantidades } from "../api/AsignacionApi";
 import { PedidoPosRuta, PedidoPosTienda } from "../types/PedidoPosModel";
 import { ComparativoStockItem } from "../types/StockModel";
@@ -376,7 +377,7 @@ function TransporteSection({ ruta, fecha, puedeEditar, camiones, pilotos, asigna
   );
 }
 
-function StoreCard({ tienda }: { tienda: PedidoPosTienda }) {
+function StoreCard({ tienda, onCambiarFecha }: { tienda: PedidoPosTienda; onCambiarFecha?: (pedido: PedidoCambioFecha) => void }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -405,6 +406,23 @@ function StoreCard({ tienda }: { tienda: PedidoPosTienda }) {
             transition={{ duration: 0.2 }}
             className="overflow-hidden bg-white"
           >
+            {onCambiarFecha && (
+              <div className="flex items-center gap-2 px-6 pt-3 text-xs text-gray-500">
+                <span className="flex-1">
+                  Entrega: <span className="font-medium text-gray-700">{tienda.fecha_requerida?.split("-").reverse().join("/")}</span>
+                </span>
+                <BotonCambiarFecha
+                  pedido={{
+                    pedido_id: tienda.pedido_id,
+                    numero_pedido: tienda.numero_pedido,
+                    nombre_tienda: tienda.nombre_tienda || tienda.codigo_tienda,
+                    fecha_requerida: tienda.fecha_requerida,
+                    estado: tienda.estado,
+                  }}
+                  onClick={onCambiarFecha}
+                />
+              </div>
+            )}
             <div className="space-y-1.5 px-3 py-3">
               {tienda.items.map(item => (
                 <div key={item.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-gray-50">
@@ -700,6 +718,8 @@ function PedidosPolloViewCompleta() {
   const [trasladoGuardando, setTrasladoGuardando] = useState(false);
   const [trasladoError, setTrasladoError] = useState<string | null>(null);
 
+  const [pedidoCambioFecha, setPedidoCambioFecha] = useState<PedidoCambioFecha | null>(null);
+
   useEffect(() => {
     getAllCamiones().then(setCamiones).catch(() => setCamiones([]));
     getPilotos().then(setPilotos).catch(() => setPilotos([]));
@@ -821,6 +841,22 @@ function PedidosPolloViewCompleta() {
     } finally {
       setLoadingBusqueda(false);
     }
+  };
+
+  // Después de cambiar la fecha de un pedido: vuelve a buscar la ruta+fecha
+  // que se está viendo (la de la ruta tomada, o la de la vista previa).
+  const handleRecargarTrasCambioFecha = async () => {
+    if (candado) {
+      try {
+        const data = await getPedidosPos("POLLO", { ruta_id: candado.ruta_id, fecha_requerida: candado.fecha });
+        setPedidoRuta(data.rutas[0] || null);
+      } catch (err) {
+        setErrorPedidos(err instanceof Error ? err.message : "Error al obtener los pedidos de la ruta");
+      }
+      return;
+    }
+
+    await handleBuscarPreview();
   };
 
   const handleIniciar = async () => {
@@ -1369,7 +1405,7 @@ function PedidosPolloViewCompleta() {
               )}
               <div className="space-y-2">
                 {previewRuta.tiendas.map(tienda => (
-                  <StoreCard key={tienda.pedido_id} tienda={tienda} />
+                  <StoreCard key={tienda.pedido_id} tienda={tienda} onCambiarFecha={setPedidoCambioFecha} />
                 ))}
               </div>
             </div>
@@ -1559,7 +1595,7 @@ function PedidosPolloViewCompleta() {
                 <p className="text-xs text-gray-400 mb-3">{pedidoRuta.tiendas.length} tienda{pedidoRuta.tiendas.length !== 1 ? "s" : ""}</p>
                 <div className="space-y-2.5">
                   {pedidoRuta.tiendas.map(tienda => (
-                    <StoreCard key={tienda.pedido_id} tienda={tienda} />
+                    <StoreCard key={tienda.pedido_id} tienda={tienda} onCambiarFecha={setPedidoCambioFecha} />
                   ))}
                 </div>
               </div>
@@ -1571,6 +1607,12 @@ function PedidosPolloViewCompleta() {
       {showStockModal && stockComparativo && (
         <ComparativoStockModal comparativo={stockComparativo} fecha={candado?.fecha || ""} onClose={() => setShowStockModal(false)} />
       )}
+
+      <CambiarFechaPedidoModal
+        pedido={pedidoCambioFecha}
+        onClose={() => setPedidoCambioFecha(null)}
+        onActualizado={handleRecargarTrasCambioFecha}
+      />
 
       {showFifoModal && asignacionFifo && (
         <AsignacionFifoModal

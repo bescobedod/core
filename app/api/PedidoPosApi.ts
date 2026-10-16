@@ -504,3 +504,25 @@ export async function firmarTicketInsumos(rutaId: string, fecha: string): Promis
     }
     return data;
 }
+export interface CambiarFechaPedidoResponse {
+    success: boolean;
+    pedido_id: string;
+    numero_pedido: string;
+    fecha_anterior: string;
+    fecha_requerida: string;
+    estado: string;
+    asignacion_reiniciada: boolean;
+}
+
+// Cambia la fecha de entrega de un pedido (cabecera y detalle).
+export async function cambiarFechaRequeridaPedido(pedidoId: string, fechaRequerida: string): Promise<CambiarFechaPedidoResponse> {
+    const response = await authFetch(`/pedido/cambiarFechaRequerida`, {
+        method: 'POST',
+        body: JSON.stringify({ pedido_id: pedidoId, fecha_requerida: fechaRequerida })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.details || data.error || "Error al cambiar la fecha de entrega");
+    }
+    return data;
+}

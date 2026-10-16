@@ -30,6 +30,7 @@ import { Input } from "../ui/input";
 import { motion, AnimatePresence } from "motion/react";
 import { getPedidosPos, getComparativoStockInsumos, enviarTransferenciaInsumos, previsualizarTicketInsumos, firmarTicketInsumos, previsualizarResumenRutaInsumos, previsualizarQrsRutaInsumos, previsualizarReporteDetalleInsumos, previsualizarReporteEnTransitoInsumos, descargarExcelReporteDetalleInsumos, descargarExcelReporteEnTransitoInsumos, FormatoReporte } from "../api/PedidoPosApi";
 import { ReporteParametrosModal, FormatoReporteModal, ParametrosReporte } from "./ReporteParametrosModal";
+import { CambiarFechaPedidoModal, BotonCambiarFecha, PedidoCambioFecha } from "./CambiarFechaPedidoModal";
 import { guardarAsignacionCantidades } from "../api/AsignacionApi";
 import { PedidoPosRutaInsumos, PedidoPosTiendaInsumos, PedidoPosDetallePedido } from "../types/PedidoPosModel";
 import { ComparativoStockItem } from "../types/StockModel";
@@ -402,7 +403,34 @@ function ListaItemsPedido({ items, iconClassName }: { items: PedidoPosDetallePed
   );
 }
 
-function StoreCard({ tienda }: { tienda: PedidoPosTiendaInsumos }) {
+// Fecha de entrega + botón "Cambiar fecha" de uno de los pedidos de la tarjeta.
+function FilaFechaPedido({ pedido, tienda, etiqueta, onCambiarFecha }: {
+  pedido: PedidoPosDetallePedido;
+  tienda: PedidoPosTiendaInsumos;
+  etiqueta: string;
+  onCambiarFecha: (pedido: PedidoCambioFecha) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 px-3 pb-1 text-xs text-gray-500">
+      <span className="flex-1">
+        Entrega: <span className="font-medium text-gray-700">{pedido.fecha_requerida?.split("-").reverse().join("/")}</span>
+      </span>
+      <BotonCambiarFecha
+        pedido={{
+          pedido_id: pedido.pedido_id,
+          numero_pedido: pedido.numero_pedido,
+          nombre_tienda: tienda.nombre_tienda || tienda.codigo_tienda,
+          fecha_requerida: pedido.fecha_requerida,
+          estado: pedido.estado,
+          etiqueta,
+        }}
+        onClick={onCambiarFecha}
+      />
+    </div>
+  );
+}
+
+function StoreCard({ tienda, onCambiarFecha }: { tienda: PedidoPosTiendaInsumos; onCambiarFecha?: (pedido: PedidoCambioFecha) => void }) {
   const [open, setOpen] = useState(false);
   // Insumos es el bloque principal de la tarjeta; si la tienda solo pidió
   // activo fijo ese día (sin insumos), el activo fijo pasa a ser el principal.
@@ -446,6 +474,9 @@ function StoreCard({ tienda }: { tienda: PedidoPosTiendaInsumos }) {
                 {tienda.activo_fijo && (
                   <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400 px-3 pb-1">Insumos</p>
                 )}
+                {onCambiarFecha && (
+                  <FilaFechaPedido pedido={tienda.insumos} tienda={tienda} etiqueta="Insumos" onCambiarFecha={onCambiarFecha} />
+                )}
                 <ListaItemsPedido items={tienda.insumos.items} iconClassName="text-sky-500" />
               </div>
             )}
@@ -455,6 +486,9 @@ function StoreCard({ tienda }: { tienda: PedidoPosTiendaInsumos }) {
                   <p className="text-[10px] font-bold uppercase tracking-wide text-purple-500 flex-1">Activo Fijo</p>
                   <EstadoPedidoBadge estado={tienda.activo_fijo.estado} />
                 </div>
+                {onCambiarFecha && (
+                  <FilaFechaPedido pedido={tienda.activo_fijo} tienda={tienda} etiqueta="Activo Fijo" onCambiarFecha={onCambiarFecha} />
+                )}
                 <ListaItemsPedido items={tienda.activo_fijo.items} iconClassName="text-purple-500" />
               </div>
             )}
@@ -737,6 +771,8 @@ function PedidosInsumosViewCompleta() {
   const [trasladoGuardando, setTrasladoGuardando] = useState(false);
   const [trasladoError, setTrasladoError] = useState<string | null>(null);
 
+  const [pedidoCambioFecha, setPedidoCambioFecha] = useState<PedidoCambioFecha | null>(null);
+
   useEffect(() => {
     getAllCamiones().then(setCamiones).catch(() => setCamiones([]));
     getPilotos().then(setPilotos).catch(() => setPilotos([]));
@@ -856,6 +892,22 @@ function PedidosInsumosViewCompleta() {
     } finally {
       setLoadingBusqueda(false);
     }
+  };
+
+  // Después de cambiar la fecha de un pedido: vuelve a buscar la ruta+fecha
+  // que se está viendo (la de la ruta tomada, o la de la vista previa).
+  const handleRecargarTrasCambioFecha = async () => {
+    if (candado) {
+      try {
+        const data = await getPedidosPos("INSUMOS", { ruta_id: candado.ruta_id, fecha_requerida: candado.fecha });
+        setPedidoRuta(data.rutas[0] || null);
+      } catch (err) {
+        setErrorPedidos(err instanceof Error ? err.message : "Error al obtener los pedidos de la ruta");
+      }
+      return;
+    }
+
+    await handleBuscarPreview();
   };
 
   const handleIniciar = async () => {
@@ -1395,7 +1447,7 @@ function PedidosInsumosViewCompleta() {
               )}
               <div className="space-y-2">
                 {previewRuta.tiendas.map(tienda => (
-                  <StoreCard key={`${tienda.insumos?.pedido_id ?? ""}-${tienda.activo_fijo?.pedido_id ?? ""}`} tienda={tienda} />
+                  <StoreCard key={`${tienda.insumos?.pedido_id ?? ""}-${tienda.activo_fijo?.pedido_id ?? ""}`} tienda={tienda} onCambiarFecha={setPedidoCambioFecha} />
                 ))}
               </div>
             </div>
@@ -1577,7 +1629,7 @@ function PedidosInsumosViewCompleta() {
                 <p className="text-xs text-gray-400 mb-3">{pedidoRuta.tiendas.length} tienda{pedidoRuta.tiendas.length !== 1 ? "s" : ""}</p>
                 <div className="space-y-2.5">
                   {pedidoRuta.tiendas.map(tienda => (
-                    <StoreCard key={`${tienda.insumos?.pedido_id ?? ""}-${tienda.activo_fijo?.pedido_id ?? ""}`} tienda={tienda} />
+                    <StoreCard key={`${tienda.insumos?.pedido_id ?? ""}-${tienda.activo_fijo?.pedido_id ?? ""}`} tienda={tienda} onCambiarFecha={setPedidoCambioFecha} />
                   ))}
                 </div>
               </div>
@@ -1589,6 +1641,12 @@ function PedidosInsumosViewCompleta() {
       {showStockModal && stockComparativo && (
         <ComparativoStockModal comparativo={stockComparativo} fecha={candado?.fecha || ""} onClose={() => setShowStockModal(false)} />
       )}
+
+      <CambiarFechaPedidoModal
+        pedido={pedidoCambioFecha}
+        onClose={() => setPedidoCambioFecha(null)}
+        onActualizado={handleRecargarTrasCambioFecha}
+      />
 
       {showFifoModal && asignacionFifo && (
         <AsignacionFifoModal
