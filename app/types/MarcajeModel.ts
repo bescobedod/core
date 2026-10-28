@@ -59,8 +59,18 @@ export interface FiltrosMarcajes {
   id_zona?: string;
 }
 
+export interface ResumenMarcajes {
+  entradas: number;
+  salidas: number;
+  fuera_zona: number;
+  offline: number;
+}
+
 export interface ResultadoBusquedaMarcajes {
   total: number;
-  limite: number;
+  resumen?: ResumenMarcajes;
+  pagina: number;
+  tamano: number;
+  total_paginas: number;
   marcajes: Marcaje[];
 }

@@ -36,13 +36,30 @@ export async function getZonasMarcaje(): Promise<ZonaMarcaje[]> {
   return data.zonas;
 }
 
-export async function buscarMarcajes(filtros: FiltrosMarcajes): Promise<ResultadoBusquedaMarcajes> {
-  const response = await authFetch(`/marcaje/buscarMarcajes?${paramsDeFiltros(filtros).toString()}`);
+export async function buscarMarcajes(
+  filtros: FiltrosMarcajes,
+  pagina = 1,
+  tamano = 50,
+  incluirResumen = false
+): Promise<ResultadoBusquedaMarcajes> {
+  const params = paramsDeFiltros(filtros);
+  if (incluirResumen) params.set('resumen', '1');
+  params.set('pagina', String(pagina));
+  params.set('tamano', String(tamano));
+
+  const response = await authFetch(`/marcaje/buscarMarcajes?${params.toString()}`);
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(data.details || data.error || 'Error al buscar los marcajes');
   }
-  return { total: data.total, limite: data.limite, marcajes: data.marcajes };
+  return {
+    total: data.total,
+    resumen: data.resumen,
+    pagina: data.pagina,
+    tamano: data.tamano,
+    total_paginas: data.total_paginas,
+    marcajes: data.marcajes,
+  };
 }
 
 export async function getMarcaje(idMarcaje: string): Promise<MarcajeDetalle> {

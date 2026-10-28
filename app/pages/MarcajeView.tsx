@@ -8,6 +8,8 @@ import {
   Eraser,
   Loader2,
   AlertCircle,
+  ChevronLeft,
+  ChevronRight,
   FileSpreadsheet,
   X as XIcon,
   ExternalLink,
@@ -32,6 +34,7 @@ import {
   FiltrosMarcajes,
   Marcaje,
   MarcajeDetalle,
+  ResumenMarcajes,
   TipoMarcaje,
   UsuarioConMarcajes,
   ZonaMarcaje,
@@ -267,20 +270,18 @@ function MarcajeDetalleModal({
   );
 }
 
-function Resumen({ marcajes }: { marcajes: Marcaje[] }) {
-  const tarjetas = useMemo(
-    () => [
-      { etiqueta: "Entradas", valor: marcajes.filter((m) => m.tipo === "ENTRADA").length, color: "text-[#2183AE]" },
-      { etiqueta: "Salidas", valor: marcajes.filter((m) => m.tipo === "SALIDA").length, color: "text-gray-700" },
-      { etiqueta: "Inválidos", valor: marcajes.filter((m) => !m.es_valido).length, color: "text-red-600" },
-      { etiqueta: "Fuera de zona", valor: marcajes.filter((m) => m.zona_estado === "FUERA").length, color: "text-red-600" },
-      { etiqueta: "Sin conexión", valor: marcajes.filter((m) => m.is_offline).length, color: "text-amber-600" },
-    ],
-    [marcajes]
-  );
+const TAMANO_PAGINA = 50;
+
+function Resumen({ resumen }: { resumen: ResumenMarcajes }) {
+  const tarjetas = [
+    { etiqueta: "Entradas", valor: resumen.entradas, color: "text-[#2183AE]" },
+    { etiqueta: "Salidas", valor: resumen.salidas, color: "text-gray-700" },
+    { etiqueta: "Fuera de zona", valor: resumen.fuera_zona, color: "text-red-600" },
+    { etiqueta: "Sin conexión", valor: resumen.offline, color: "text-amber-600" },
+  ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
       {tarjetas.map((t) => (
         <div key={t.etiqueta} className="bg-white rounded-xl shadow-sm border border-gray-200 px-4 py-3">
           <p className="text-xs text-gray-500">{t.etiqueta}</p>
@@ -304,12 +305,14 @@ export function MarcajeView() {
 
   const [marcajes, setMarcajes] = useState<Marcaje[]>([]);
   const [total, setTotal] = useState(0);
-  const [limite, setLimite] = useState(0);
+  const [resumen, setResumen] = useState<ResumenMarcajes | null>(null);
+  const [pagina, setPagina] = useState(1);
+  const [totalPaginas, setTotalPaginas] = useState(1);
+  const [tamano, setTamano] = useState(TAMANO_PAGINA);
   const [buscando, setBuscando] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Filtros con los que se hizo la última búsqueda: la exportación usa estos,
-  // no lo que se esté editando en los campos.
+  // Filtros de la última búsqueda: los usan la paginación y la exportación.
   const [filtrosAplicados, setFiltrosAplicados] = useState<FiltrosMarcajes>({});
 
   const [exportando, setExportando] = useState(false);
@@ -328,25 +331,19 @@ export function MarcajeView() {
       .catch(() => setZonas([]));
   }, []);
 
-  const handleBuscar = async () => {
-    const filtros: FiltrosMarcajes = {
-      id_usuario: idUsuario || undefined,
-      fecha_desde: fechaDesde || undefined,
-      fecha_hasta: fechaHasta || undefined,
-      tipo: (tipo as TipoMarcaje) || undefined,
-      estado: (estado as "valido" | "invalido") || undefined,
-      id_zona: idZona || undefined,
-    };
-
+  const cargarPagina = async (filtros: FiltrosMarcajes, paginaDestino: number, esBusquedaNueva = false) => {
     setBuscando(true);
     setError(null);
     setErrorExportar(null);
 
     try {
-      const resultado = await buscarMarcajes(filtros);
+      const resultado = await buscarMarcajes(filtros, paginaDestino, TAMANO_PAGINA, esBusquedaNueva);
+      if (resultado.resumen) setResumen(resultado.resumen);
       setMarcajes(resultado.marcajes);
       setTotal(resultado.total);
-      setLimite(resultado.limite);
+      setPagina(resultado.pagina);
+      setTotalPaginas(resultado.total_paginas);
+      setTamano(resultado.tamano);
       setFiltrosAplicados(filtros);
       setHasSearched(true);
     } catch (err) {
@@ -355,6 +352,22 @@ export function MarcajeView() {
       setBuscando(false);
     }
   };
+
+  const handleBuscar = () =>
+    cargarPagina(
+      {
+        id_usuario: idUsuario || undefined,
+        fecha_desde: fechaDesde || undefined,
+        fecha_hasta: fechaHasta || undefined,
+        tipo: (tipo as TipoMarcaje) || undefined,
+        estado: (estado as "valido" | "invalido") || undefined,
+        id_zona: idZona || undefined,
+      },
+      1,
+      true
+    );
+
+  const handleCambiarPagina = (paginaDestino: number) => cargarPagina(filtrosAplicados, paginaDestino);
 
   const handleLimpiar = () => {
     setIdUsuario("");
@@ -365,6 +378,9 @@ export function MarcajeView() {
     setIdZona("");
     setMarcajes([]);
     setTotal(0);
+    setResumen(null);
+    setPagina(1);
+    setTotalPaginas(1);
     setHasSearched(false);
     setError(null);
     setErrorExportar(null);
@@ -524,13 +540,13 @@ export function MarcajeView() {
 
       {marcajes.length > 0 && (
         <>
-          <Resumen marcajes={marcajes} />
+          {resumen && <Resumen resumen={resumen} />}
 
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div className="px-4 py-2.5 border-b border-gray-100 text-xs text-gray-500">
-              {total > limite
-                ? `Mostrando los ${marcajes.length} marcajes más recientes de ${total}. Acota los filtros para ver el resto.`
-                : `${total} marcaje${total !== 1 ? "s" : ""}`}
+              {`${total} marcaje${total !== 1 ? "s" : ""}`}
+              {total > tamano &&
+                ` · mostrando ${(pagina - 1) * tamano + 1}–${(pagina - 1) * tamano + marcajes.length}`}
             </div>
 
             <div className="overflow-x-auto">
@@ -573,6 +589,32 @@ export function MarcajeView() {
                 </tbody>
               </table>
             </div>
+
+            {totalPaginas > 1 && (
+              <div className="px-4 py-2.5 border-t border-gray-100 flex items-center justify-between gap-2">
+                <Button
+                  onClick={() => handleCambiarPagina(pagina - 1)}
+                  disabled={buscando || pagina <= 1}
+                  size="sm"
+                  variant="outline"
+                >
+                  <ChevronLeft size={14} className="mr-1" />
+                  Anterior
+                </Button>
+                <span className="text-xs text-gray-500">
+                  Página {pagina} de {totalPaginas}
+                </span>
+                <Button
+                  onClick={() => handleCambiarPagina(pagina + 1)}
+                  disabled={buscando || pagina >= totalPaginas}
+                  size="sm"
+                  variant="outline"
+                >
+                  Siguiente
+                  <ChevronRight size={14} className="ml-1" />
+                </Button>
+              </div>
+            )}
           </div>
         </>
       )}
