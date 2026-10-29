@@ -72,6 +72,9 @@ importers:
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.3.3
+      '@types/google.maps':
+        specifier: 3.66.0
+        version: 3.66.0
       '@types/node':
         specifier: ^20
         version: 20.19.43
