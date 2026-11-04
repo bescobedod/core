@@ -338,7 +338,7 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
     if (!camion || !accion) return;
 
     if (accion === "traslado" && !bodegaSeleccionada) {
-      setErrorAccion("Selecciona la bodega de cuarto frío destino.");
+      setErrorAccion(tipoRuta === "INSUMOS" ? "No se definió la bodega central destino." : "Selecciona la bodega de cuarto frío destino.");
       return;
     }
 
@@ -414,7 +414,7 @@ export function CamionesEnRutaBase({ tipoRuta, titulo, subtitulo }: CamionesEnRu
           });
         })
         .catch((err) => {
-          setErrorAccion(err instanceof Error ? err.message : "Error al trasladar a cuarto frío.");
+          setErrorAccion(err instanceof Error ? err.message : tipoRuta === "INSUMOS" ? "Error al trasladar a la bodega central." : "Error al trasladar a cuarto frío.");
         })
         .finally(() => {
           setConfirmandoAccion(false);

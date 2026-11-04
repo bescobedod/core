@@ -51,6 +51,24 @@ export async function crearMenu(menu: {
     return data.menu;
 }
 
+export async function actualizarMenu(id: number, menu: {
+    nombre: string;
+    icono: string;
+    nombre_menu: string;
+    descripcion: string;
+}): Promise<MenuModel> {
+    const response = await authFetch(`/menus/actualizarMenu/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(menu),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.details || data.error || "Error al actualizar el menú");
+    }
+    return data.menu;
+}
+
 export async function actualizarVisibilidadMenu(id: number, visible: boolean): Promise<MenuModel> {
     const response = await authFetch(`/menus/actualizarVisibilidad/${id}`, {
         method: 'PUT',

@@ -270,8 +270,9 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
     setShowQrModal(false);
   };
 
-  // Reporte de las rutas de la fecha (resumen general + detalle), sin importar
-  // el estado. Un usuario lectura_division siempre usa SU división (el modal
+  // Reporte de las rutas de la fecha (resumen general + detalle). El backend
+  // solo incluye pedidos EN_TRANSITO, ENTREGADO y ENTREGADO_PARCIAL para estos
+  // niveles de permiso. Un usuario lectura_division siempre usa SU división (el modal
   // ni siquiera se la pregunta); con lectura elige en el modal.
   const handleGenerarReporte = async (parametros: ParametrosReporte) => {
     const division: DivisionReporte | undefined =

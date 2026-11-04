@@ -116,6 +116,7 @@ export interface PedidoActivoFijoItemApi {
     unidad_medida: string;
     cantidad_solicitada: string;
     cantidad_asignada: string;
+    cantidad_recibida: string | null;
     estado_linea: string;
 }
 

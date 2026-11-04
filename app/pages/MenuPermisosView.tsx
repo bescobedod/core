@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ShieldCheck, Plus, Trash2, Loader2, AlertCircle, FolderPlus, Eye, EyeOff } from "lucide-react";
+import * as Icons from "lucide-react";
+import { ShieldCheck, Plus, Trash2, Loader2, AlertCircle, AlertTriangle, FolderPlus, Eye, EyeOff, Pencil } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import {
   getAllMenusAdmin,
   crearMenu,
+  actualizarMenu,
   actualizarVisibilidadMenu,
   getRolesDeMenu,
   asignarRolAMenu,
@@ -22,6 +24,18 @@ const NIVELES_PERMISO: { value: NivelPermisoMenu; label: string }[] = [
   { value: "lectura", label: "Lectura" },
   { value: "lectura_division", label: "Lectura (su división)" },
 ];
+
+// Mismo criterio que HomeView: si el nombre no existe en lucide-react, se
+// muestra un círculo. Sirve para previsualizar el ícono al editar.
+function iconoLucide(nombre: string) {
+  if (nombre in Icons) {
+    // @ts-expect-error clave dinámica
+    return Icons[nombre];
+  }
+  return Icons.Circle;
+}
+
+type DatosMenu = { nombre: string; icono: string; nombre_menu: string; descripcion: string };
 
 export function MenuPermisosView() {
   const [menus, setMenus] = useState<MenuModel[]>([]);
@@ -44,6 +58,9 @@ export function MenuPermisosView() {
   const [agregandoRol, setAgregandoRol] = useState(false);
   const [errorAgregarRol, setErrorAgregarRol] = useState<string | null>(null);
   const [cambiandoNivelId, setCambiandoNivelId] = useState<number | null>(null);
+  const [edicionMenu, setEdicionMenu] = useState<DatosMenu | null>(null);
+  const [guardandoMenu, setGuardandoMenu] = useState(false);
+  const [errorEditarMenu, setErrorEditarMenu] = useState<string | null>(null);
 
   const cargarMenus = (seleccionarId?: number) => {
     setCargandoMenus(true);
@@ -83,7 +100,48 @@ export function MenuPermisosView() {
     cargarRolesDelMenu(menuSeleccionado);
     setRolParaAgregar("");
     setNivelPermisoParaAgregar("escritura");
+    setEdicionMenu(null);
+    setErrorEditarMenu(null);
   }, [menuSeleccionado]);
+
+  const handleEmpezarEdicion = (menu: MenuModel) => {
+    setEdicionMenu({
+      nombre: menu.nombre,
+      icono: menu.icono,
+      nombre_menu: menu.nombre_menu,
+      descripcion: menu.descripcion,
+    });
+    setErrorEditarMenu(null);
+  };
+
+  const handleGuardarEdicion = async (menu: MenuModel) => {
+    if (!edicionMenu) return;
+
+    const datos = {
+      nombre: edicionMenu.nombre.trim(),
+      icono: edicionMenu.icono.trim(),
+      nombre_menu: edicionMenu.nombre_menu.trim(),
+      descripcion: edicionMenu.descripcion.trim(),
+    };
+
+    if (datos.nombre_menu !== menu.nombre_menu &&
+        !window.confirm(`¿Cambiar el nombre de archivo de "${menu.nombre_menu}" a "${datos.nombre_menu}"? El sistema usa ese valor para abrir la vista y leer los permisos; si no coincide con una vista existente, el menú dejará de funcionar.`)) {
+      return;
+    }
+
+    setGuardandoMenu(true);
+    setErrorEditarMenu(null);
+
+    try {
+      const actualizado = await actualizarMenu(menu.id_menu, datos);
+      setMenus((prev) => prev.map((m) => (m.id_menu === menu.id_menu ? { ...m, ...actualizado } : m)));
+      setEdicionMenu(null);
+    } catch (err) {
+      setErrorEditarMenu(err instanceof Error ? err.message : "Error al actualizar el menú");
+    } finally {
+      setGuardandoMenu(false);
+    }
+  };
 
   const handleCrearMenu = async () => {
     if (!nombreNuevoMenu.trim() || !iconoNuevoMenu.trim() || !codigoNuevoMenu.trim() || !descripcionNuevoMenu.trim()) return;
@@ -308,8 +366,115 @@ export function MenuPermisosView() {
             </div>
           ) : (
             <>
-              <h3 className="text-sm font-medium text-gray-800">{menuActual.nombre}</h3>
-              <p className="text-xs text-gray-400 mb-3">{menuActual.descripcion}</p>
+              {edicionMenu ? (
+                <div className="p-3 border border-gray-200 rounded-lg space-y-2.5 bg-gray-50">
+                  <p className="text-xs font-medium text-gray-700">Editar menú</p>
+                  <div>
+                    <label htmlFor="editar-menu-nombre" className="text-[11px] text-gray-500 mb-1 block">Nombre para mostrar</label>
+                    <Input
+                    id="editar-menu-nombre"
+                    value={edicionMenu.nombre}
+                    maxLength={50}
+                    onChange={(e) => setEdicionMenu({ ...edicionMenu, nombre: e.target.value })}
+                    className="h-8 text-xs bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="editar-menu-archivo" className="text-[11px] text-gray-500 mb-1 block">Nombre de Archivo</label>
+                    <Input
+                    id="editar-menu-archivo"
+                    value={edicionMenu.nombre_menu}
+                    maxLength={50}
+                    onChange={(e) => setEdicionMenu({ ...edicionMenu, nombre_menu: e.target.value })}
+                    className="h-8 text-xs bg-white"
+                    />
+                    {edicionMenu.nombre_menu.trim() !== menuActual.nombre_menu && (
+                      <p className="text-[11px] text-amber-700 mt-1 flex items-start gap-1">
+                        <AlertTriangle size={12} className="shrink-0 mt-px" />
+                        El sistema usa este valor para abrir la vista y leer sus permisos. Cámbialo solo si la vista también cambió de nombre.
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label htmlFor="editar-menu-icono" className="text-[11px] text-gray-500 mb-1 block">Ícono (nombre de lucide-react, ej. Truck)</label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                      id="editar-menu-icono"
+                      value={edicionMenu.icono}
+                      maxLength={20}
+                      onChange={(e) => setEdicionMenu({ ...edicionMenu, icono: e.target.value })}
+                      className="h-8 text-xs bg-white flex-1"
+                      />
+                      {(() => {
+                        const IconoPrevia = iconoLucide(edicionMenu.icono.trim());
+                        return (
+                          <span className="w-8 h-8 rounded-md border border-gray-200 bg-white flex items-center justify-center shrink-0" title="Vista previa">
+                            <IconoPrevia size={16} className="text-[#2183AE]" />
+                          </span>
+                        );
+                      })()}
+                    </div>
+                    {edicionMenu.icono.trim() && !(edicionMenu.icono.trim() in Icons) && (
+                      <p className="text-[11px] text-amber-700 mt-1">Ese ícono no existe en lucide-react; se mostrará un círculo.</p>
+                    )}
+                  </div>
+                  <div>
+                    <label htmlFor="editar-menu-descripcion" className="text-[11px] text-gray-500 mb-1 block">Descripción</label>
+                    <Input
+                    id="editar-menu-descripcion"
+                    value={edicionMenu.descripcion}
+                    maxLength={255}
+                    onChange={(e) => setEdicionMenu({ ...edicionMenu, descripcion: e.target.value })}
+                    className="h-8 text-xs bg-white"
+                    />
+                  </div>
+                  {errorEditarMenu && (
+                    <p className="text-xs text-red-600 flex items-center gap-1">
+                      <AlertCircle size={12} /> {errorEditarMenu}
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                    size="sm"
+                    variant="submit"
+                    onClick={() => handleGuardarEdicion(menuActual)}
+                    disabled={
+                      guardandoMenu ||
+                      !edicionMenu.nombre.trim() ||
+                      !edicionMenu.nombre_menu.trim() ||
+                      !edicionMenu.icono.trim() ||
+                      !edicionMenu.descripcion.trim()
+                    }
+                    >
+                      {guardandoMenu ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
+                      Guardar
+                    </Button>
+                    <Button
+                    size="sm"
+                    variant="cancel"
+                    onClick={() => { setEdicionMenu(null); setErrorEditarMenu(null); }}
+                    disabled={guardandoMenu}>
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-medium text-gray-800">{menuActual.nombre}</h3>
+                    <p className="text-xs text-gray-400">{menuActual.descripcion}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      Archivo: <span className="text-gray-500">{menuActual.nombre_menu}</span> · Ícono: <span className="text-gray-500">{menuActual.icono}</span>
+                    </p>
+                  </div>
+                  <button
+                  onClick={() => handleEmpezarEdicion(menuActual)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-[#2183AE] hover:bg-[#2183AE]/10 rounded-lg transition-colors shrink-0"
+                  >
+                    <Pencil size={12} /> Editar
+                  </button>
+                </div>
+              )}
               <div className="flex flex-col sm:flex-row gap-2 mt-3">
                 <select
                 value={rolParaAgregar}

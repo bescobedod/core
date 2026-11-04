@@ -3,6 +3,7 @@ import { ArrowLeft, Mail, Phone, Briefcase, Building2, Grid3x3, Calendar, UserCi
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
+import { getSafeImageSrc } from '../utils/urlSafety';
 
 interface Employee {
   id: string;
@@ -134,9 +135,9 @@ export function EmployeeDetailView({ employee, onBack }: EmployeeDetailViewProps
             <div className="flex flex-col sm:flex-row items-center gap-6">
               {/* Foto de perfil */}
               <div className="w-24 h-24 sm:w-32 sm:h-32 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm flex-shrink-0 border-4 border-white/30">
-                {displayEmployee.profileImage ? (
+                {displayEmployee.profileImage && getSafeImageSrc(displayEmployee.profileImage) ? (
                   <img
-                    src={displayEmployee.profileImage}
+                    src={getSafeImageSrc(displayEmployee.profileImage)}
                     alt={`${displayEmployee.firstName} ${displayEmployee.lastName}`}
                     className="w-full h-full rounded-full object-cover"
                   />
