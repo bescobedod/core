@@ -42,7 +42,10 @@ const viewMap: Record<string, string> = {
   PedidosPolloLecturaView: 'reporte-pedidos-pollo',
   PedidosInsumoLecturaView: 'reporte-pedidos-insumo',
   VisitasView: 'visitas',
-  MarcajeView: 'marcaje'
+  MarcajeView: 'marcaje',
+  AutorizarPedidosEspecialesView: 'autorizar-pedidos-especiales',
+  PedidosEspecialesView: 'pedidos-especiales',
+  PedidosArtesanoView: 'pedidos-artesano'
 };
 
 function getIcon(name: string) {

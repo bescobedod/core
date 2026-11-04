@@ -35,6 +35,9 @@ import { PedidosPolloLecturaView } from "./pages/PedidosPolloLecturaView";
 import { PedidosInsumoLecturaView } from "./pages/PedidosInsumoLecturaView";
 import { VisitasView } from "./pages/VisitasView";
 import { MarcajeView } from "./pages/MarcajeView";
+import { AutorizarPedidosEspecialesView } from "./pages/AutorizarPedidosEspecialesView";
+import { PedidosEspecialesView } from "./pages/PedidosEspecialesView";
+import { PedidosArtesanoView } from "./pages/PedidosArtesanoView";
 
 type View =
   "login"
@@ -63,7 +66,10 @@ type View =
   | "reporte-pedidos-pollo"
   | "reporte-pedidos-insumo"
   | "visitas"
-  | "marcaje";
+  | "marcaje"
+  | "autorizar-pedidos-especiales"
+  | "pedidos-especiales"
+  | "pedidos-artesano";
 
 export default function App() {
   const [isClient, setIsClient] = useState(false);
@@ -311,6 +317,9 @@ export default function App() {
             {currentView === "usuario-muelle-pollo" && <UsuarioMuellePolloView />}
             {currentView === "visitas" && <VisitasView />}
             {currentView === "marcaje" && <MarcajeView />}
+            {currentView === "autorizar-pedidos-especiales" && <AutorizarPedidosEspecialesView />}
+            {currentView === "pedidos-especiales" && <PedidosEspecialesView />}
+            {currentView === "pedidos-artesano" && <PedidosArtesanoView />}
           </div>
         </div>
         <div className="hidden lg:block w-64 bg-white shadow-2xl border-l border-gray-200 flex-shrink-0 fixed top-[100px] right-0 bottom-0 h-[calc(100vh-80px)]">
