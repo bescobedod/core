@@ -20,6 +20,12 @@ import {
   Truck,
   CreditCard,
   CheckCircle2,
+  Clock,
+  History as HistoryIcon,
+  PackageCheck,
+  Pencil,
+  Phone,
+  XCircle,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -32,6 +38,7 @@ import {
   buscarClientesAvicola,
   crearClienteAvicola,
   crearPedidoArtesano,
+  editarPedidoArtesano,
   getPedidosArtesano,
   getProductosArtesano,
   getUsuariosArtesano,
@@ -39,6 +46,8 @@ import {
 import {
   ClienteAvicola,
   CondicionPagoArtesano,
+  EstadoPedidoArtesano,
+  HistorialPedidoArtesano,
   Paginacion,
   PedidoArtesano,
   ProductoArtesano,
@@ -46,7 +55,7 @@ import {
 } from "../types/PedidoEspecialModel";
 import { RutaPollo, TiendaRutaPollo } from "../types/RutaPolloModel";
 import { MUELLES_POLLO } from "./ReporteParametrosModal";
-import { BannerMensaje, ControlesPaginacion, EntregaPlaceholder, ModalBase, formatearFechaCorta } from "./PedidoEspecialComun";
+import { BannerMensaje, ControlesPaginacion, ModalBase, formatearFechaCorta } from "./PedidoEspecialComun";
 
 function hoy(): string {
   return new Date().toISOString().slice(0, 10);
@@ -56,20 +65,115 @@ function nombreMuelle(whsCode: string): string {
   return MUELLES_POLLO.find((m) => m.whs_code === whsCode)?.nombre ?? whsCode;
 }
 
-// Mismo formato de chip que EstadoPedidoBadge de las vistas de pedidos.
-function EtiquetaPago({ pedido }: { pedido: PedidoArtesano }) {
-  return pedido.condicion_pago === "PAGADO" ? (
-    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-green-50 text-green-700 border-green-200 whitespace-nowrap shrink-0">
-      <CheckCircle2 size={12} /> Pagado
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200 whitespace-nowrap shrink-0">
-      <CreditCard size={12} /> Al crédito
+function formatearFechaHora(fecha: string): string {
+  return new Date(fecha).toLocaleString("es-GT", { timeZone: "America/Guatemala", dateStyle: "short", timeStyle: "short" });
+}
+
+const ESTADOS_ARTESANO: EstadoPedidoArtesano[] = ["CREADO", "AUTORIZADO", "RECHAZADO", "CARGADO", "ENTREGADO"];
+
+const ESTADO_ARTESANO_CFG: Record<EstadoPedidoArtesano, { label: string; chip: string; icon: ReactNode }> = {
+  CREADO: { label: "Creado", chip: "bg-sky-50 text-sky-700 border-sky-200", icon: <Clock size={12} /> },
+  AUTORIZADO: { label: "Autorizado", chip: "bg-green-50 text-green-700 border-green-200", icon: <CheckCircle2 size={12} /> },
+  RECHAZADO: { label: "Rechazado", chip: "bg-red-50 text-red-700 border-red-200", icon: <XCircle size={12} /> },
+  CARGADO: { label: "Cargado", chip: "bg-violet-50 text-violet-700 border-violet-200", icon: <Truck size={12} /> },
+  ENTREGADO: { label: "Entregado", chip: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: <PackageCheck size={12} /> },
+};
+
+function EtiquetaEstado({ estado }: { estado: EstadoPedidoArtesano }) {
+  const cfg = ESTADO_ARTESANO_CFG[estado];
+
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border whitespace-nowrap shrink-0 ${cfg.chip}`}>
+      {cfg.icon} {cfg.label}
     </span>
   );
 }
 
-function TarjetaArtesano({ pedido }: { pedido: PedidoArtesano }) {
+// Mismo formato de chip que EstadoPedidoBadge de las vistas de pedidos.
+export function EtiquetaPago({ pedido }: { pedido: PedidoArtesano }) {
+  return pedido.condicion_pago === "DEPOSITO" ? (
+    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-green-50 text-green-700 border-green-200 whitespace-nowrap shrink-0">
+      <CreditCard size={12} /> Depósito
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200 whitespace-nowrap shrink-0">
+      <CreditCard size={12} /> Descuento de planilla
+    </span>
+  );
+}
+
+export function HistorialPedido({ historial }: { historial: HistorialPedidoArtesano[] }) {
+  if (historial.length === 0) return null;
+
+  return (
+    <div className="border border-gray-100 rounded-lg px-3 py-3">
+      <div className="flex items-center gap-2 text-gray-500 mb-2">
+        <HistoryIcon size={14} />
+        <p className="text-[11px] font-medium uppercase tracking-wide">Historial</p>
+      </div>
+      <ol className="space-y-2">
+        {historial.map((h, i) => (
+          <li key={`${h.fecha}-${i}`} className="flex items-start gap-2.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#2183AE] mt-1.5 shrink-0" />
+            <div className="min-w-0 text-sm">
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <EtiquetaEstado estado={h.estado_nuevo} />
+                <span className="text-xs text-gray-500">
+                  {h.usuario ?? "Sistema"} · {formatearFechaHora(h.fecha)}
+                </span>
+              </p>
+              {h.comentario && <p className="text-xs text-gray-600 mt-1 whitespace-pre-wrap break-words">{h.comentario}</p>}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function SeguimientoPedido({ pedido }: { pedido: PedidoArtesano }) {
+  const datos: { titulo: string; valor: string }[] = [];
+
+  if (pedido.autorizado_por) {
+    datos.push({
+      titulo: pedido.estado === "RECHAZADO" ? "Rechazado por" : "Autorizado por",
+      valor: `${pedido.autorizado_por} · ${formatearFechaCorta(pedido.fecha_autorizacion)}`,
+    });
+  }
+  if (pedido.nombre_piloto) {
+    datos.push({ titulo: "Piloto", valor: pedido.codigo_piloto ? `${pedido.nombre_piloto} (${pedido.codigo_piloto})` : pedido.nombre_piloto });
+  }
+  if (pedido.cargado_por) {
+    datos.push({ titulo: "Cargado por", valor: `${pedido.cargado_por} · ${formatearFechaCorta(pedido.fecha_carga)}` });
+  }
+  if (pedido.entregado_por) {
+    datos.push({ titulo: "Entregado por", valor: `${pedido.entregado_por} · ${formatearFechaCorta(pedido.fecha_entrega)}` });
+  }
+
+  return (
+    <div className="space-y-3">
+      {pedido.estado === "RECHAZADO" && pedido.motivo_rechazo && (
+        <div className="bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-red-700">Motivo del rechazo</p>
+          <p className="text-sm text-gray-700 whitespace-pre-wrap">{pedido.motivo_rechazo}</p>
+        </div>
+      )}
+      {datos.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+          {datos.map((d) => (
+            <div key={d.titulo}>
+              <p className="text-xs text-gray-400">{d.titulo}</p>
+              <p className="text-gray-800">{d.valor}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      <HistorialPedido historial={pedido.historial} />
+    </div>
+  );
+}
+
+function TarjetaArtesano({ pedido, onEditar }: { pedido: PedidoArtesano; onEditar?: (pedido: PedidoArtesano) => void }) {
   const [abierta, setAbierta] = useState(false);
 
   return (
@@ -82,7 +186,10 @@ function TarjetaArtesano({ pedido }: { pedido: PedidoArtesano }) {
           <User size={14} className="text-gray-500" />
         </span>
         <span className="text-sm text-gray-700 flex-1 min-w-0 truncate">{pedido.cliente_nombre}</span>
-        <span className="text-xs text-gray-400 shrink-0 hidden sm:inline">{pedido.numero_pedido}</span>
+        <span className="text-xs text-gray-400 shrink-0 hidden sm:inline">
+          {pedido.serie} {pedido.numero_pedido}
+        </span>
+        <EtiquetaEstado estado={pedido.estado} />
         <EtiquetaPago pedido={pedido} />
         <span className="text-xs text-gray-400 shrink-0 hidden sm:inline">{pedido.items.length} ítems</span>
         {abierta ? <ChevronUp size={15} className="text-gray-400 shrink-0" /> : <ChevronDown size={15} className="text-gray-400 shrink-0" />}
@@ -98,13 +205,13 @@ function TarjetaArtesano({ pedido }: { pedido: PedidoArtesano }) {
           >
             <div className="px-4 sm:px-6 pt-3 text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-1">
               <span>
-                Pedido: <span className="font-medium text-gray-700">{pedido.numero_pedido}</span>
+                Pedido: <span className="font-medium text-gray-700">{pedido.serie} {pedido.numero_pedido}</span>
               </span>
               <span>
                 Entrega: <span className="font-medium text-gray-700">{formatearFechaCorta(pedido.fecha_requerida)}</span>
               </span>
               <span>{pedido.nombre_ruta}</span>
-              {pedido.condicion_pago === "PAGADO" && pedido.numero_boleta && <span>Boleta {pedido.numero_boleta}</span>}
+              {pedido.condicion_pago === "DEPOSITO" && pedido.numero_boleta && <span>Boleta {pedido.numero_boleta}</span>}
               <span className="sm:hidden">{pedido.items.length} ítems</span>
             </div>
 
@@ -120,6 +227,11 @@ function TarjetaArtesano({ pedido }: { pedido: PedidoArtesano }) {
                   <p className="text-xs text-gray-400">Cliente</p>
                   <p className="text-gray-800">{pedido.cliente_nombre}</p>
                   {pedido.cliente_nit && <p className="text-xs text-gray-400">NIT {pedido.cliente_nit}</p>}
+                  {pedido.telefono_contacto && (
+                    <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
+                      <Phone size={11} /> {pedido.telefono_contacto}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs text-gray-400">Ruta</p>
@@ -154,12 +266,30 @@ function TarjetaArtesano({ pedido }: { pedido: PedidoArtesano }) {
                         </p>
                       </div>
                     </div>
-                    <p className="text-sm text-gray-600 tabular-nums shrink-0">{item.cantidad}</p>
+                    <p className="text-sm text-gray-600 tabular-nums shrink-0 text-right">
+                      {item.cantidad_autorizada !== null && item.cantidad_autorizada !== item.cantidad ? (
+                        <>
+                          <span className="line-through text-gray-400 mr-1.5">{item.cantidad}</span>
+                          <span className="font-medium text-amber-700">{item.cantidad_autorizada}</span>
+                        </>
+                      ) : (
+                        item.cantidad
+                      )}
+                    </p>
                   </div>
                 ))}
               </div>
 
-              <EntregaPlaceholder />
+              <SeguimientoPedido pedido={pedido} />
+
+              {pedido.estado === "CREADO" && onEditar && (
+                <div className="flex justify-end">
+                  <Button onClick={() => onEditar(pedido)} variant="outline" size="sm">
+                    <Pencil size={14} className="mr-1.5" />
+                    Modificar pedido
+                  </Button>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -177,8 +307,8 @@ function NuevoClienteModal({
 }) {
   const [nombre, setNombre] = useState("");
   const [nit, setNit] = useState("");
-  const [direccion, setDireccion] = useState("");
   const [direccionFisica, setDireccionFisica] = useState("");
+  const [telefono, setTelefono] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -193,8 +323,9 @@ function NuevoClienteModal({
         await crearClienteAvicola({
           nombre: nombre.trim(),
           nit: nit.trim() || null,
-          direccion: direccion.trim() || null,
+          direccion: null,
           direccion_fisica: direccionFisica.trim(),
+          telefono: telefono.trim() || null,
         })
       );
     } catch (err) {
@@ -215,12 +346,12 @@ function NuevoClienteModal({
           <Input value={nit} onChange={(e) => setNit(e.target.value)} maxLength={20} />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Dirección</label>
-          <Input value={direccion} onChange={(e) => setDireccion(e.target.value)} maxLength={250} />
+          <label className="block text-xs text-gray-500 mb-1">Dirección de entrega *</label>
+          <Input value={direccionFisica} onChange={(e) => setDireccionFisica(e.target.value)} maxLength={250} />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Dirección física de entrega *</label>
-          <Input value={direccionFisica} onChange={(e) => setDireccionFisica(e.target.value)} maxLength={250} />
+          <label className="block text-xs text-gray-500 mb-1">Teléfono de contacto</label>
+          <Input value={telefono} onChange={(e) => setTelefono(e.target.value)} maxLength={30} />
         </div>
         {error && <p className="text-xs text-red-600">{error}</p>}
       </div>
@@ -237,17 +368,40 @@ function NuevoClienteModal({
   );
 }
 
-function BuscarPedidos() {
+interface FiltrosBusqueda {
+  usuario: string;
+  estado: "" | EstadoPedidoArtesano;
+  numero: string;
+  fechaDesde: string;
+  fechaHasta: string;
+}
+
+// numeroInicial: si viene, busca ese pedido al abrir (el que se acaba de crear o modificar).
+function BuscarPedidos({
+  numeroInicial,
+  onEditar,
+}: {
+  numeroInicial: string;
+  onEditar?: (pedido: PedidoArtesano) => void;
+}) {
   const [usuarios, setUsuarios] = useState<UsuarioArtesano[]>([]);
   const [usuario, setUsuario] = useState("");
+  const [estado, setEstado] = useState<"" | EstadoPedidoArtesano>("");
+  const [numero, setNumero] = useState(numeroInicial);
   const [fechaDesde, setFechaDesde] = useState("");
   const [fechaHasta, setFechaHasta] = useState("");
   // Filtros con los que se hizo la última búsqueda: al cambiar de página se
   // usan estos, no lo que se esté editando en los campos.
-  const [aplicados, setAplicados] = useState({ usuario: "", fechaDesde: "", fechaHasta: "" });
+  const [aplicados, setAplicados] = useState<FiltrosBusqueda>({
+    usuario: "",
+    estado: "",
+    numero: numeroInicial,
+    fechaDesde: "",
+    fechaHasta: "",
+  });
   const [pedidos, setPedidos] = useState<PedidoArtesano[]>([]);
   const [paginacion, setPaginacion] = useState<Paginacion>({ page: 1, pageSize: 10, total: 0, totalPages: 1 });
-  const [buscando, setBuscando] = useState(false);
+  const [buscando, setBuscando] = useState(numeroInicial !== "");
   const [yaBusco, setYaBusco] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -259,13 +413,15 @@ function BuscarPedidos() {
       .catch(() => setUsuarios([]));
   }, []);
 
-  const buscar = async (pagina: number, filtros: { usuario: string; fechaDesde: string; fechaHasta: string }) => {
+  const buscar = async (pagina: number, filtros: FiltrosBusqueda) => {
     setBuscando(true);
     setError(null);
 
     try {
       const resultado = await getPedidosArtesano({
         id_usuario: filtros.usuario || undefined,
+        estados: filtros.estado ? [filtros.estado] : undefined,
+        numero: filtros.numero.trim() || undefined,
         fechaDesde: filtros.fechaDesde || undefined,
         fechaHasta: filtros.fechaHasta || undefined,
         page: pagina,
@@ -281,14 +437,41 @@ function BuscarPedidos() {
     }
   };
 
+  // Al abrir con un número (el pedido que se acaba de crear o modificar), lo busca.
+  useEffect(() => {
+    if (!numeroInicial) return;
+
+    let vigente = true;
+
+    getPedidosArtesano({ numero: numeroInicial })
+      .then((resultado) => {
+        if (!vigente) return;
+        setPedidos(resultado.pedidos);
+        setPaginacion(resultado.paginacion);
+        setYaBusco(true);
+      })
+      .catch((err) => {
+        if (vigente) setError(err instanceof Error ? err.message : "Error al buscar los pedidos");
+      })
+      .finally(() => {
+        if (vigente) setBuscando(false);
+      });
+
+    return () => {
+      vigente = false;
+    };
+  }, [numeroInicial]);
+
   const handleBuscar = () => {
-    const filtros = { usuario, fechaDesde, fechaHasta };
+    const filtros: FiltrosBusqueda = { usuario, estado, numero, fechaDesde, fechaHasta };
     setAplicados(filtros);
     buscar(1, filtros);
   };
 
   const handleLimpiar = () => {
     setUsuario("");
+    setEstado("");
+    setNumero("");
     setFechaDesde("");
     setFechaHasta("");
     setPedidos([]);
@@ -300,7 +483,7 @@ function BuscarPedidos() {
   return (
     <>
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Usuario</label>
             <select
@@ -315,6 +498,25 @@ function BuscarPedidos() {
                 </option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Estado</label>
+            <select
+              value={estado}
+              onChange={(e) => setEstado(e.target.value as "" | EstadoPedidoArtesano)}
+              className="w-full h-9 px-3 text-sm border border-gray-300 rounded-md bg-white focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
+            >
+              <option value="">Todos los estados</option>
+              {ESTADOS_ARTESANO.map((e) => (
+                <option key={e} value={e}>
+                  {ESTADO_ARTESANO_CFG[e].label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Número de pedido</label>
+            <Input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="PA-2026-000001" maxLength={30} />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Requerido desde</label>
@@ -358,7 +560,7 @@ function BuscarPedidos() {
       {pedidos.length > 0 && (
         <div className="space-y-2.5">
           {pedidos.map((pedido) => (
-            <TarjetaArtesano key={pedido.id} pedido={pedido} />
+            <TarjetaArtesano key={pedido.id} pedido={pedido} onEditar={onEditar} />
           ))}
         </div>
       )}
@@ -389,7 +591,16 @@ function EncabezadoSeccion({ icono, titulo, subtitulo }: { icono: ReactNode; tit
   );
 }
 
-function NuevoPedido({ onCreado }: { onCreado: (mensaje: string) => void }) {
+// pedido: si viene, el formulario modifica ese pedido (solo posible en estado CREADO).
+function NuevoPedido({
+  pedido,
+  onGuardado,
+  onCancelarEdicion,
+}: {
+  pedido: PedidoArtesano | null;
+  onGuardado: (mensaje: string, pedido: PedidoArtesano) => void;
+  onCancelarEdicion: () => void;
+}) {
   const [rutas, setRutas] = useState<RutaPollo[]>([]);
   // Tiendas asignadas a la ruta elegida (tbl_tiendas_rutas_pollo, asignación vigente).
   const [tiendasRuta, setTiendasRuta] = useState<TiendaRutaPollo[]>([]);
@@ -400,15 +611,18 @@ function NuevoPedido({ onCreado }: { onCreado: (mensaje: string) => void }) {
   const [cargandoDatos, setCargandoDatos] = useState(true);
   const [errorDatos, setErrorDatos] = useState<string | null>(null);
 
-  const [fechaRequerida, setFechaRequerida] = useState("");
-  const [rutaId, setRutaId] = useState("");
+  const [fechaRequerida, setFechaRequerida] = useState(pedido ? pedido.fecha_requerida.slice(0, 10) : "");
+  const [rutaId, setRutaId] = useState(pedido?.ruta_id ?? "");
   const [tiendaId, setTiendaId] = useState("");
-  const [clienteId, setClienteId] = useState("");
-  const [direccionFisica, setDireccionFisica] = useState("");
-  const [lineas, setLineas] = useState<LineaPedido[]>([]);
-  const [condicionPago, setCondicionPago] = useState<CondicionPagoArtesano>("PAGADO");
-  const [numeroBoleta, setNumeroBoleta] = useState("");
-  const [comentario, setComentario] = useState("");
+  const [clienteId, setClienteId] = useState(pedido?.cliente_id ?? "");
+  const [direccionFisica, setDireccionFisica] = useState(pedido?.direccion_entrega ?? "");
+  const [telefono, setTelefono] = useState(pedido?.telefono_contacto ?? "");
+  const [lineas, setLineas] = useState<LineaPedido[]>(
+    pedido ? pedido.items.map((i) => ({ codigo_producto: i.codigo_producto, cantidad: String(i.cantidad) })) : []
+  );
+  const [condicionPago, setCondicionPago] = useState<CondicionPagoArtesano>(pedido?.condicion_pago ?? "DEPOSITO");
+  const [numeroBoleta, setNumeroBoleta] = useState(pedido?.numero_boleta ?? "");
+  const [comentario, setComentario] = useState(pedido?.comentario ?? "");
   const [mostrarNuevoCliente, setMostrarNuevoCliente] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
@@ -419,12 +633,12 @@ function NuevoPedido({ onCreado }: { onCreado: (mensaje: string) => void }) {
         setRutas(listaRutas.filter((r) => r.activo));
         setClientes(listaClientes);
         setProductos(listaProductos);
-        // Hoy solo hay un código de artesano: la línea ya viene lista.
-        if (listaProductos.length === 1) setLineas([{ codigo_producto: listaProductos[0].codigo_producto, cantidad: "1" }]);
+        // Si solo hay un código de artesano, la línea ya viene lista (al crear).
+        if (!pedido && listaProductos.length === 1) setLineas([{ codigo_producto: listaProductos[0].codigo_producto, cantidad: "1" }]);
       })
       .catch((err) => setErrorDatos(err instanceof Error ? err.message : "Error al cargar los datos del formulario"))
       .finally(() => setCargandoDatos(false));
-  }, []);
+  }, [pedido]);
 
   const opcionesRutas = useMemo(
     () => rutas.map((r) => ({ id: r.id, name: `${r.nombre_ruta} · ${nombreMuelle(r.whs_code_origen)}` })),
@@ -434,7 +648,8 @@ function NuevoPedido({ onCreado }: { onCreado: (mensaje: string) => void }) {
   // Al cambiar de ruta se cargan sus tiendas; se ignora la respuesta si mientras
   // tanto se eligió otra ruta.
   useEffect(() => {
-    setTiendaId("");
+    // Al modificar un pedido, la tienda de referencia vuelve a elegirse con su ruta original.
+    setTiendaId(pedido && rutaId === pedido.ruta_id ? (pedido.codigo_tienda_referencia ?? "") : "");
     setTiendasRuta([]);
     setErrorTiendas(null);
 
@@ -457,7 +672,7 @@ function NuevoPedido({ onCreado }: { onCreado: (mensaje: string) => void }) {
     return () => {
       vigente = false;
     };
-  }, [rutaId]);
+  }, [rutaId, pedido]);
 
   const opcionesTiendas = useMemo(
     () =>
@@ -479,6 +694,7 @@ function NuevoPedido({ onCreado }: { onCreado: (mensaje: string) => void }) {
   const seleccionarCliente = (id: string) => {
     setClienteId(id);
     setDireccionFisica(clientes.find((c) => c.id === id)?.direccion_fisica ?? "");
+    setTelefono(clientes.find((c) => c.id === id)?.telefono ?? "");
   };
 
   const actualizarLinea = (indice: number, cambios: Partial<LineaPedido>) => {
@@ -490,42 +706,38 @@ function NuevoPedido({ onCreado }: { onCreado: (mensaje: string) => void }) {
   else if (fechaRequerida < hoy()) problemas.push("La fecha requerida no puede ser anterior a hoy.");
   if (!rutaId) problemas.push("Elige la ruta.");
   if (!clienteId) problemas.push("Elige el cliente.");
-  else if (direccionFisica.trim() === "") problemas.push("El cliente necesita una dirección física de entrega.");
+  else if (direccionFisica.trim() === "") problemas.push("El cliente necesita una dirección de entrega.");
   if (lineas.length === 0 || lineas.some((l) => !(Number(l.cantidad) > 0))) problemas.push("Cada producto necesita una cantidad mayor a 0.");
-  if (condicionPago === "PAGADO" && numeroBoleta.trim() === "") problemas.push("Indica el número de boleta de pago.");
+  if (condicionPago === "PLANILLA" && comentario.trim() === "") problemas.push("Con descuento de planilla, indica el código de empleado en el comentario.");
 
-  const handleCrear = async () => {
+  const handleGuardar = async () => {
     setEnviando(true);
     setErrorEnvio(null);
 
     try {
-      const pedido = await crearPedidoArtesano({
+      const datos = {
         fecha_requerida: fechaRequerida,
         ruta_id: rutaId,
         id_tienda_simphony_referencia: tiendaId || null,
         cliente_id: clienteId,
         direccion_fisica: direccionFisica.trim(),
+        telefono_contacto: telefono.trim() || null,
         condicion_pago: condicionPago,
-        numero_boleta: condicionPago === "PAGADO" ? numeroBoleta.trim() : null,
+        numero_boleta: condicionPago === "DEPOSITO" ? numeroBoleta.trim() || null : null,
         comentario: comentario.trim() || null,
         items: lineas.map((l) => ({ codigo_producto: l.codigo_producto, cantidad: Number(l.cantidad) })),
-      });
+      };
 
-      // Recarga los clientes: la dirección física capturada quedó guardada en el cliente.
-      setClientes(await buscarClientesAvicola(""));
-      setFechaRequerida("");
-      setRutaId("");
-      setTiendaId("");
-      setClienteId("");
-      setDireccionFisica("");
-      setLineas(productos.length === 1 ? [{ codigo_producto: productos[0].codigo_producto, cantidad: "1" }] : []);
-      setCondicionPago("PAGADO");
-      setNumeroBoleta("");
-      setComentario("");
-      onCreado(`Pedido ${pedido.numero_pedido} creado para ${pedido.cliente_nombre}.`);
+      const guardado = pedido ? await editarPedidoArtesano({ id: pedido.id, ...datos }) : await crearPedidoArtesano(datos);
+
+      onGuardado(
+        pedido
+          ? `Pedido ${guardado.numero_pedido} modificado.`
+          : `Pedido ${guardado.numero_pedido} creado para ${guardado.cliente_nombre}.`,
+        guardado
+      );
     } catch (err) {
-      setErrorEnvio(err instanceof Error ? err.message : "No se pudo crear el pedido");
-    } finally {
+      setErrorEnvio(err instanceof Error ? err.message : pedido ? "No se pudo modificar el pedido" : "No se pudo crear el pedido");
       setEnviando(false);
     }
   };
@@ -624,13 +836,15 @@ function NuevoPedido({ onCreado }: { onCreado: (mensaje: string) => void }) {
                 {cliente.nit ? `NIT ${cliente.nit}` : "Sin NIT"}
                 {cliente.direccion ? ` · ${cliente.direccion}` : ""}
               </p>
-              <Label className="text-xs text-gray-700 mb-1.5 block">Dirección física de entrega *</Label>
+              <Label className="text-xs text-gray-700 mb-1.5 block">Dirección de entrega *</Label>
               <Input value={direccionFisica} onChange={(e) => setDireccionFisica(e.target.value)} maxLength={250} className="h-11" />
               {!cliente.direccion_fisica && (
                 <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
-                  Este cliente no tenía dirección física: se guardará la que escribas.
+                  Este cliente no tenía dirección de entrega: se guardará la que escribas.
                 </p>
               )}
+              <Label className="text-xs text-gray-700 mt-3 mb-1.5 block">Teléfono de contacto</Label>
+              <Input value={telefono} onChange={(e) => setTelefono(e.target.value)} maxLength={30} className="h-11" />
             </div>
           )}
         </div>
@@ -697,25 +911,32 @@ function NuevoPedido({ onCreado }: { onCreado: (mensaje: string) => void }) {
           })}
         </div>
         {productosDisponibles.length > 0 && (
-          <Button
-            type="button"
-            onClick={() => setLineas((prev) => [...prev, { codigo_producto: productosDisponibles[0].codigo_producto, cantidad: "1" }])}
-            variant="outline"
-            size="sm"
-            className="mt-3"
+          <select
+            value=""
+            onChange={(e) => {
+              const codigo = e.target.value;
+              if (codigo) setLineas((prev) => [...prev, { codigo_producto: codigo, cantidad: "1" }]);
+            }}
+            aria-label="Agregar producto"
+            className="mt-3 w-full sm:w-auto h-9 px-3 text-sm border border-gray-300 rounded-md bg-white focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
           >
-            <Plus className="h-4 w-4" /> Agregar producto
-          </Button>
+            <option value="">+ Agregar producto…</option>
+            {productosDisponibles.map((p) => (
+              <option key={p.codigo_producto} value={p.codigo_producto}>
+                {p.descripcion_producto}
+              </option>
+            ))}
+          </select>
         )}
       </div>
 
       <div className="mb-6">
-        <EncabezadoSeccion icono={<CreditCard className="h-5 w-5 text-white" />} titulo="Pago y comentario" subtitulo="Si ya se pagó, indica la boleta" />
+        <EncabezadoSeccion icono={<CreditCard className="h-5 w-5 text-white" />} titulo="Pago y comentario" subtitulo="Depósito o descuento de planilla" />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <Label className="text-xs text-gray-700 mb-1.5 block">Condición de pago *</Label>
             <div className="grid grid-cols-2 gap-2">
-              {(["PAGADO", "CREDITO"] as const).map((condicion) => (
+              {(["DEPOSITO", "PLANILLA"] as const).map((condicion) => (
                 <button
                   key={condicion}
                   type="button"
@@ -726,14 +947,14 @@ function NuevoPedido({ onCreado }: { onCreado: (mensaje: string) => void }) {
                       : "border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
                   }`}
                 >
-                  {condicion === "PAGADO" ? "Pagado" : "Al crédito"}
+                  {condicion === "DEPOSITO" ? "Depósito" : "Descuento de planilla"}
                 </button>
               ))}
             </div>
           </div>
 
           <AnimatePresence initial={false}>
-            {condicionPago === "PAGADO" && (
+            {condicionPago === "DEPOSITO" && (
               <motion.div
                 key="boleta"
                 initial={{ opacity: 0, y: -5 }}
@@ -741,15 +962,15 @@ function NuevoPedido({ onCreado }: { onCreado: (mensaje: string) => void }) {
                 exit={{ opacity: 0, y: -5 }}
                 transition={{ duration: 0.2 }}
               >
-                <Label className="text-xs text-gray-700 mb-1.5 block">Número de Boleta de Pago *</Label>
+                <Label className="text-xs text-gray-700 mb-1.5 block">Número de boleta (opcional)</Label>
                 <Input value={numeroBoleta} onChange={(e) => setNumeroBoleta(e.target.value)} maxLength={50} className="h-11" />
               </motion.div>
             )}
           </AnimatePresence>
 
           <div className="sm:col-span-2">
-            <Label className="text-xs text-gray-700 mb-1.5 block">Comentario</Label>
-            <Textarea value={comentario} onChange={(e) => setComentario(e.target.value)} rows={3} maxLength={500} placeholder="Indicaciones de la entrega..." />
+            <Label className="text-xs text-gray-700 mb-1.5 block">Comentario{condicionPago === "PLANILLA" ? " *" : ""}</Label>
+            <Textarea value={comentario} onChange={(e) => setComentario(e.target.value)} rows={3} maxLength={500} placeholder={condicionPago === "PLANILLA" ? "Código de empleado (ej. AL 8641) e indicaciones de la entrega..." : "Indicaciones de la entrega..."} />
           </div>
         </div>
       </div>
@@ -764,13 +985,26 @@ function NuevoPedido({ onCreado }: { onCreado: (mensaje: string) => void }) {
         )}
         {errorEnvio && <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-4">{errorEnvio}</p>}
 
-        <Button
-          onClick={handleCrear}
-          disabled={enviando || problemas.length > 0}
-          className="w-full border border-[#2183AE] bg-[#2183AE] text-white hover:bg-white hover:text-[#2183AE]"
-        >
-          {enviando ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : "Crear Pedido de Pollo Artesano"}
-        </Button>
+        <div className="flex flex-col sm:flex-row gap-2">
+          {pedido && (
+            <Button onClick={onCancelarEdicion} disabled={enviando} variant="outline" className="sm:w-40">
+              Cancelar
+            </Button>
+          )}
+          <Button
+            onClick={handleGuardar}
+            disabled={enviando || problemas.length > 0}
+            className="flex-1 border border-[#2183AE] bg-[#2183AE] text-white hover:bg-white hover:text-[#2183AE]"
+          >
+            {enviando ? (
+              <Loader2 className="h-5 w-5 animate-spin mr-2" />
+            ) : pedido ? (
+              "Guardar cambios del pedido"
+            ) : (
+              "Crear Pedido de Pollo Artesano"
+            )}
+          </Button>
+        </div>
       </div>
 
       {mostrarNuevoCliente && (
@@ -780,6 +1014,7 @@ function NuevoPedido({ onCreado }: { onCreado: (mensaje: string) => void }) {
             setClientes((prev) => [...prev, nuevo]);
             setClienteId(nuevo.id);
             setDireccionFisica(nuevo.direccion_fisica ?? "");
+            setTelefono(nuevo.telefono ?? "");
             setMostrarNuevoCliente(false);
           }}
         />
@@ -793,6 +1028,36 @@ export function PedidosArtesanoView() {
   const [aviso, setAviso] = useState<string | null>(null);
   // Crear pedidos pide el nivel 'escritura' del menú; con otro nivel solo se busca.
   const [puedeCrear, setPuedeCrear] = useState(false);
+  // Pedido que se está modificando (solo los CREADO) y la búsqueda que se hace al
+  // volver de guardar, para que se vea el pedido con sus cambios.
+  const [pedidoEnEdicion, setPedidoEnEdicion] = useState<PedidoArtesano | null>(null);
+  const [busquedaInicial, setBusquedaInicial] = useState<{ id: number; numero: string } | null>(null);
+
+  const irABuscar = () => {
+    setPedidoEnEdicion(null);
+    setBusquedaInicial(null);
+    setTab("buscar");
+  };
+
+  const irACrear = () => {
+    setPedidoEnEdicion(null);
+    setBusquedaInicial(null);
+    setAviso(null);
+    setTab("crear");
+  };
+
+  const modificarPedido = (pedido: PedidoArtesano) => {
+    setPedidoEnEdicion(pedido);
+    setAviso(null);
+    setTab("crear");
+  };
+
+  const terminarGuardado = (mensaje: string, pedido: PedidoArtesano) => {
+    setAviso(mensaje);
+    setPedidoEnEdicion(null);
+    setBusquedaInicial({ id: Date.now(), numero: pedido.numero_pedido });
+    setTab("buscar");
+  };
 
   useEffect(() => {
     getAllMenus()
@@ -820,7 +1085,7 @@ export function PedidosArtesanoView() {
 
         <div className="flex gap-2 mb-6 bg-white border border-gray-200 rounded-xl p-1.5 shadow-sm w-fit">
           <button
-            onClick={() => setTab("buscar")}
+            onClick={irABuscar}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
               tab === "buscar" ? "bg-[#2183AE] text-white shadow" : "text-gray-600 hover:bg-gray-100"
             }`}
@@ -829,12 +1094,13 @@ export function PedidosArtesanoView() {
           </button>
           {puedeCrear && (
             <button
-              onClick={() => setTab("crear")}
+              onClick={irACrear}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
                 tab === "crear" ? "bg-[#2183AE] text-white shadow" : "text-gray-600 hover:bg-gray-100"
               }`}
             >
-              <Plus className="h-4 w-4" /> Crear Pedido
+              {pedidoEnEdicion ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+              {pedidoEnEdicion ? "Modificar Pedido" : "Crear Pedido"}
             </button>
           )}
         </div>
@@ -843,13 +1109,17 @@ export function PedidosArtesanoView() {
 
         {tab === "crear" && puedeCrear ? (
           <NuevoPedido
-            onCreado={(mensaje) => {
-              setAviso(mensaje);
-              setTab("buscar");
-            }}
+            key={pedidoEnEdicion?.id ?? "nuevo"}
+            pedido={pedidoEnEdicion}
+            onGuardado={terminarGuardado}
+            onCancelarEdicion={irABuscar}
           />
         ) : (
-          <BuscarPedidos />
+          <BuscarPedidos
+            key={busquedaInicial?.id ?? 0}
+            numeroInicial={busquedaInicial?.numero ?? ""}
+            onEditar={puedeCrear ? modificarPedido : undefined}
+          />
         )}
       </div>
     </div>

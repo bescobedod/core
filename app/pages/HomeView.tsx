@@ -45,7 +45,8 @@ const viewMap: Record<string, string> = {
   MarcajeView: 'marcaje',
   AutorizarPedidosEspecialesView: 'autorizar-pedidos-especiales',
   PedidosEspecialesView: 'pedidos-especiales',
-  PedidosArtesanoView: 'pedidos-artesano'
+  PedidosArtesanoView: 'pedidos-artesano',
+  AvicolaPedidosArtesanoView: 'rastro-pedidos-artesano'
 };
 
 function getIcon(name: string) {
