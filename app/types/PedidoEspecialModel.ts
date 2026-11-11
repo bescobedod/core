@@ -67,18 +67,22 @@ export interface AsignacionEspecial {
 // ---- Pedidos de pollo artesano (se crean en Core) ----
 
 // Pago por depósito (boleta opcional) o descuento de planilla (código de empleado en las observaciones).
-export type CondicionPagoArtesano = "DEPOSITO" | "PLANILLA";
+export type CondicionPagoArtesano = "DEPOSITO" | "PLANILLA" | "PENDIENTE";
 
-export type EstadoPedidoArtesano = "CREADO" | "AUTORIZADO" | "RECHAZADO" | "CARGADO" | "ENTREGADO";
+// CREADO → CARGADO → ENTREGADO, o CREADO → RECHAZADO. Cargar incluye la autorización.
+export type EstadoPedidoArtesano = "CREADO" | "RECHAZADO" | "CARGADO" | "ENTREGADO";
 
 export interface ClienteAvicola {
   id: string;
   nombre: string;
   nit: string | null;
+  // Dirección de entrega; vacía en los empleados.
   direccion: string | null;
-  // Dirección real de entrega. Vacía para los clientes recién importados.
-  direccion_fisica: string | null;
   telefono: string | null;
+  // Solo si el cliente es empleado de la empresa (ej. "AL 8641").
+  codigo_empleado: string | null;
+  // Cliente en SAP; sin él no se puede entregar el pedido.
+  card_code: string | null;
 }
 
 export interface ProductoArtesano {
@@ -105,7 +109,9 @@ export interface PedidoArtesanoItem {
   descripcion_producto: string;
   unidad_medida: string;
   cantidad: number;
-  // Lo que autorizó el rastro; null mientras el pedido no se autoriza.
+  // Precio con el que se vendió la línea; null en pedidos creados sin precio.
+  precio_unitario: number | null;
+  // Lo que se autorizó cargar (puede ser menos de lo solicitado); null hasta cargar.
   cantidad_autorizada: number | null;
 }
 
@@ -126,20 +132,28 @@ export interface PedidoArtesano {
   cliente_id: string;
   cliente_nombre: string;
   cliente_nit: string | null;
-  direccion_entrega: string;
+  // Vacía en los pedidos de empleados.
+  direccion_entrega: string | null;
   telefono_contacto: string | null;
   condicion_pago: CondicionPagoArtesano;
   numero_boleta: string | null;
   comentario: string | null;
   motivo_rechazo: string | null;
-  autorizado_por: string | null;
-  fecha_autorizacion: string | null;
+  rechazado_por: string | null;
+  fecha_rechazo: string | null;
   codigo_piloto: number | null;
   nombre_piloto: string | null;
   cargado_por: string | null;
   fecha_carga: string | null;
   entregado_por: string | null;
   fecha_entrega: string | null;
+  // Hay foto (o PDF) de la hoja firmada; la URL se pide aparte.
+  tiene_evidencia_entrega: boolean;
+  // Documentos creados en SAP: transferencia al cargar y entrega al entregar.
+  sap_traslado_docnum: number | null;
+  sap_entrega_docnum: number | null;
+  // Versión del pedido (ISO); se devuelve al cargar para detectar cambios hechos mientras tanto.
+  actualizado_en: string;
   items: PedidoArtesanoItem[];
   historial: HistorialPedidoArtesano[];
 }
@@ -162,10 +176,10 @@ export interface CrearPedidoArtesanoPayload {
   fecha_requerida: string;
   ruta_id: string;
   // id_tienda_simphony de una tienda asignada a la ruta elegida.
-  id_tienda_simphony_referencia: string | null;
+  id_tienda_simphony_referencia: string;
   cliente_id: string;
-  // Si el cliente no tenía dirección física, se completa al crear el pedido.
-  direccion_fisica: string;
+  // Si el cliente no tenía dirección, se completa al crear el pedido. Vacía solo para empleados.
+  direccion: string;
   telefono_contacto: string | null;
   condicion_pago: CondicionPagoArtesano;
   numero_boleta: string | null;
@@ -181,20 +195,20 @@ export interface EditarPedidoArtesanoPayload extends CrearPedidoArtesanoPayload 
 export interface CrearClienteAvicolaPayload {
   nombre: string;
   nit: string | null;
-  direccion: string | null;
-  direccion_fisica: string;
+  // Obligatoria salvo que se indique el código de empleado.
+  direccion: string;
   telefono: string | null;
+  codigo_empleado: string | null;
+}
+
+export interface PilotoArtesano {
+  // Código de empleado en Nomina.
+  codigo: number;
+  nombre: string;
 }
 
 export interface StockArtesano {
   codigo_producto: string;
   stock_disponible: number;
   encontrado_en_sap: boolean;
-}
-
-export interface AutorizarPedidoArtesanoPayload {
-  id: string;
-  // Una entrada por cada producto del pedido (0 hasta lo solicitado).
-  items: { codigo_producto: string; cantidad_autorizada: number }[];
-  comentario?: string | null;
 }

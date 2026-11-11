@@ -1,7 +1,6 @@
 import { authFetch } from "../utils/auth-fetch";
 import {
   AsignacionEspecial,
-  AutorizarPedidoArtesanoPayload,
   ClienteAvicola,
   CrearClienteAvicolaPayload,
   CrearPedidoArtesanoPayload,
@@ -12,6 +11,7 @@ import {
   PaginaPedidos,
   PedidoArtesano,
   PedidoEspecial,
+  PilotoArtesano,
   ProductoArtesano,
   StockArtesano,
   UsuarioArtesano,
@@ -135,19 +135,38 @@ export async function crearPedidoArtesano(payload: CrearPedidoArtesanoPayload): 
   return (await enviar("/pedidoArtesano/crearPedido", payload, "Error al crear el pedido")).pedido;
 }
 
+// Registra el pago de un pedido que estaba pendiente.
+export async function completarPagoArtesano(
+  id: string,
+  condicionPago: "DEPOSITO" | "PLANILLA",
+  numeroBoleta: string | null
+): Promise<PedidoArtesano> {
+  return (
+    await enviar(
+      "/pedidoArtesano/completarPago",
+      { id, condicion_pago: condicionPago, numero_boleta: numeroBoleta },
+      "Error al completar el pago del pedido"
+    )
+  ).pedido;
+}
+
 export async function editarPedidoArtesano(payload: EditarPedidoArtesanoPayload): Promise<PedidoArtesano> {
   return (await enviar("/pedidoArtesano/editarPedido", payload, "Error al modificar el pedido")).pedido;
 }
 
-// Rastro: pedidos CREADO por autorizar, los de entrega más próxima primero.
-export async function getPedidosPendientesArtesano(fechaDesde?: string, fechaHasta?: string): Promise<PedidoArtesano[]> {
-  const params = new URLSearchParams();
+// Rastro: pedidos CREADO (por cargar) o CARGADO, los de entrega más próxima primero.
+export async function getPedidosPendientesArtesano(
+  fechaDesde?: string,
+  fechaHasta?: string,
+  estado: "CREADO" | "CARGADO" = "CREADO"
+): Promise<PedidoArtesano[]> {
+  const params = new URLSearchParams({ estado });
   if (fechaDesde) params.set("fecha_desde", fechaDesde);
   if (fechaHasta) params.set("fecha_hasta", fechaHasta);
 
   const response = await authFetch(`/pedidoArtesano/getPendientes?${params.toString()}`);
 
-  return (await leerRespuesta(response, "Error al obtener los pedidos por autorizar")).pedidos;
+  return (await leerRespuesta(response, "Error al obtener los pedidos")).pedidos;
 }
 
 // Stock de la bodega del artesano; lanza error si SAP no responde.
@@ -157,10 +176,108 @@ export async function getStockArtesano(): Promise<StockArtesano[]> {
   return (await leerRespuesta(response, "Error al consultar el stock")).stock;
 }
 
-export async function autorizarPedidoArtesano(payload: AutorizarPedidoArtesanoPayload): Promise<PedidoArtesano> {
-  return (await enviar("/pedidoArtesano/autorizar", payload, "Error al autorizar el pedido")).pedido;
-}
-
 export async function rechazarPedidoArtesano(id: string, motivo: string): Promise<PedidoArtesano> {
   return (await enviar("/pedidoArtesano/rechazar", { id, motivo }, "Error al rechazar el pedido")).pedido;
+}
+
+// Resultado de cargar o entregar: pedidos procesados y errores del resto.
+export interface ResultadoLoteArtesano {
+  pedidos: PedidoArtesano[];
+  errores: string[];
+}
+
+function resultadoLote(data: { pedidos: PedidoArtesano[]; errores?: { mensaje: string }[] }): ResultadoLoteArtesano {
+  return { pedidos: data.pedidos, errores: (data.errores ?? []).map((e) => e.mensaje) };
+}
+
+export async function getPilotosArtesano(): Promise<PilotoArtesano[]> {
+  const response = await authFetch("/pedidoArtesano/getPilotos");
+
+  return (await leerRespuesta(response, "Error al obtener los pilotos")).pilotos;
+}
+
+// Carga los pedidos CREADOS (incluye la autorización). Devuelve los cargados y los errores por ruta.
+export async function cargarPedidosArtesano(
+  ids: string[],
+  codigoPiloto: number,
+  ajustes: Record<string, { codigo_producto: string; cantidad: number }[]> = {},
+  versiones: Record<string, string> = {}
+): Promise<ResultadoLoteArtesano> {
+  return resultadoLote(
+    await enviar("/pedidoArtesano/cargar", { ids, codigo_piloto: codigoPiloto, ajustes, versiones }, "Error al cargar los pedidos")
+  );
+}
+
+export async function cambiarPilotoArtesano(ids: string[], codigoPiloto: number): Promise<PedidoArtesano[]> {
+  return (await enviar("/pedidoArtesano/cambiarPiloto", { ids, codigo_piloto: codigoPiloto }, "Error al cambiar el piloto")).pedidos;
+}
+
+// Descarga el PDF del envío y devuelve una URL local para mostrarlo (hay que
+// liberarla con URL.revokeObjectURL cuando ya no se use).
+// conCuadro: la versión de Pollo Artesano, que incluye el cuadro de cobro.
+export async function getPdfEnviosArtesano(ids: string[], conCuadro = false): Promise<string> {
+  const params = new URLSearchParams({ ids: ids.join(",") });
+  if (conCuadro) params.set("cuadro", "1");
+  const response = await authFetch(`/pedidoArtesano/pdf?${params.toString()}`);
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.details || data.error || "Error al generar el PDF del envío");
+  }
+
+  return window.URL.createObjectURL(await response.blob());
+}
+
+// Entrega los pedidos cargados (una entrega en SAP por pedido). Devuelve los entregados y los errores.
+export async function entregarPedidosArtesano(ids: string[]): Promise<ResultadoLoteArtesano> {
+  return resultadoLote(await enviar("/pedidoArtesano/entregar", { ids }, "Error al entregar los pedidos"));
+}
+
+// Foto (o PDF) de la hoja firmada; si ya había una, la reemplaza.
+export async function subirEvidenciaArtesano(id: string, archivo: File): Promise<PedidoArtesano> {
+  const formData = new FormData();
+  formData.append("id", id);
+  formData.append("foto", archivo);
+
+  const response = await authFetch("/pedidoArtesano/subirEvidencia", { method: "POST", body: formData });
+
+  return (await leerRespuesta(response, "Error al adjuntar la evidencia de entrega")).pedido;
+}
+
+// URL firmada (válida 1 hora) para ver la evidencia.
+export async function getUrlEvidenciaArtesano(id: string): Promise<string> {
+  const params = new URLSearchParams({ id });
+  const response = await authFetch(`/pedidoArtesano/getEvidencia?${params.toString()}`);
+
+  return (await leerRespuesta(response, "Error al obtener la evidencia de entrega")).url;
+}
+
+function paramsBusqueda(filtros: FiltrosPedidosArtesano): URLSearchParams {
+  const params = new URLSearchParams();
+  if (filtros.id_usuario) params.set("id_usuario", filtros.id_usuario);
+  if (filtros.estados && filtros.estados.length > 0) params.set("estado", filtros.estados.join(","));
+  if (filtros.numero) params.set("numero", filtros.numero);
+  if (filtros.fechaDesde) params.set("fecha_desde", filtros.fechaDesde);
+  if (filtros.fechaHasta) params.set("fecha_hasta", filtros.fechaHasta);
+
+  return params;
+}
+
+// Excel de los pedidos que cumplen los filtros de la búsqueda (una fila por producto).
+export async function exportarPedidosArtesano(filtros: FiltrosPedidosArtesano = {}): Promise<void> {
+  const response = await authFetch(`/pedidoArtesano/exportarPedidos?${paramsBusqueda(filtros).toString()}`);
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.details || data.error || "Error al exportar los pedidos");
+  }
+
+  const url = window.URL.createObjectURL(await response.blob());
+  const enlace = document.createElement("a");
+  enlace.href = url;
+  enlace.download = `pollo_artesano_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  document.body.appendChild(enlace);
+  enlace.click();
+  enlace.remove();
+  window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
 }
