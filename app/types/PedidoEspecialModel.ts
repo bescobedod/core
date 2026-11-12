@@ -69,8 +69,8 @@ export interface AsignacionEspecial {
 // Pago por depósito (boleta opcional) o descuento de planilla (código de empleado en las observaciones).
 export type CondicionPagoArtesano = "DEPOSITO" | "PLANILLA" | "PENDIENTE";
 
-// CREADO → CARGADO → ENTREGADO, o CREADO → RECHAZADO. Cargar incluye la autorización.
-export type EstadoPedidoArtesano = "CREADO" | "RECHAZADO" | "CARGADO" | "ENTREGADO";
+// CREADO → CARGADO → ENTREGADO, o CREADO → RECHAZADO (rastro) | CANCELADO (asistente).
+export type EstadoPedidoArtesano = "CREADO" | "RECHAZADO" | "CANCELADO" | "CARGADO" | "ENTREGADO";
 
 export interface ClienteAvicola {
   id: string;
@@ -141,6 +141,9 @@ export interface PedidoArtesano {
   motivo_rechazo: string | null;
   rechazado_por: string | null;
   fecha_rechazo: string | null;
+  motivo_cancelacion: string | null;
+  cancelado_por: string | null;
+  fecha_cancelacion: string | null;
   codigo_piloto: number | null;
   nombre_piloto: string | null;
   cargado_por: string | null;
@@ -176,7 +179,7 @@ export interface CrearPedidoArtesanoPayload {
   fecha_requerida: string;
   ruta_id: string;
   // id_tienda_simphony de una tienda asignada a la ruta elegida.
-  id_tienda_simphony_referencia: string;
+  id_tienda_simphony_referencia: string | null;
   cliente_id: string;
   // Si el cliente no tenía dirección, se completa al crear el pedido. Vacía solo para empleados.
   direccion: string;

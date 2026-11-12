@@ -2,11 +2,9 @@
 
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
-  CheckSquare,
   ChevronDown,
   ChevronUp,
   Camera,
-  CheckCircle2,
   Eraser,
   Inbox,
   Loader2,
@@ -27,7 +25,6 @@ import { Combobox } from "../ui/combobox";
 import {
   cambiarPilotoArtesano,
   cargarPedidosArtesano,
-  entregarPedidosArtesano,
   getPdfEnviosArtesano,
   getPedidosPendientesArtesano,
   getPilotosArtesano,
@@ -352,7 +349,17 @@ export function TarjetaEnvio({
         </div>
       )}
 
-      {acciones && <div className="px-4 py-2.5 border-t border-gray-100 bg-white flex flex-wrap justify-end gap-2">{acciones}</div>}
+      {(acciones || (!abierta && pedido.direccion_entrega)) && (
+        <div className="px-4 py-2.5 border-t border-gray-100 bg-white flex flex-wrap items-center gap-2">
+          {!abierta && pedido.direccion_entrega && (
+            <p className="flex-1 min-w-0 text-sm text-gray-600 flex items-center gap-1.5" title={pedido.direccion_entrega}>
+              <MapPin size={13} className="text-[#2183AE] shrink-0" />
+              <span className="truncate">{pedido.direccion_entrega}</span>
+            </p>
+          )}
+          {acciones && <div className="flex flex-wrap justify-end gap-2 ml-auto">{acciones}</div>}
+        </div>
+      )}
     </div>
   );
 }
@@ -423,7 +430,7 @@ function useListaEnvios(estado: "CREADO" | "CARGADO") {
 }
 
 function Filtros({
-  fechaDesde, setFechaDesde, fechaHasta, setFechaHasta, fechasInvertidas, cargando, recargar,
+  fechaDesde, setFechaDesde, fechaHasta, setFechaHasta, fechasInvertidas, cargando, recargar, unaFecha = false,
 }: {
   fechaDesde: string;
   setFechaDesde: (v: string) => void;
@@ -432,7 +439,35 @@ function Filtros({
   fechasInvertidas: boolean;
   cargando: boolean;
   recargar: () => void;
+  // Una sola fecha de entrega (la carga es de un día); si no, un rango.
+  unaFecha?: boolean;
 }) {
+  if (unaFecha) {
+    const cambiarFecha = (valor: string) => {
+      if (!valor) return;
+      setFechaDesde(valor);
+      setFechaHasta(valor);
+    };
+
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Fecha de entrega</label>
+            <Input type="date" value={fechaDesde} onChange={(e) => cambiarFecha(e.target.value)} />
+          </div>
+          <Button onClick={() => cambiarFecha(hoyLocal())} disabled={cargando || fechaDesde === hoyLocal()} size="sm" variant="outline">
+            Hoy
+          </Button>
+          <Button onClick={recargar} disabled={cargando} size="sm" variant="submit">
+            {cargando ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <RefreshCw size={14} className="mr-1.5" />}
+            Actualizar
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -514,8 +549,8 @@ export function TabCargar({ puedeResolver }: { puedeResolver: boolean }) {
   const lista = useListaEnvios("CREADO");
   const { pilotos, cargandoPilotos, cargarPilotos } = usePilotos();
   const [aviso, setAviso] = useState<string | null>(null);
-  const [cargandoModal, setCargandoModal] = useState(false);
-  const [urlPdf, setUrlPdf] = useState<string | null>(null);
+  // Ruta y día que se van a cargar con un solo piloto (se cargan completos).
+  const [rutaACargar, setRutaACargar] = useState<{ ids: string[]; nombre: string; fecha: string } | null>(null);
   // Cantidades a cargar de los pedidos ajustados (por id de pedido y código de producto).
   const [ajustes, setAjustes] = useState<Record<string, Record<string, number>>>({});
   const [ajustando, setAjustando] = useState<PedidoArtesano | null>(null);
@@ -531,18 +566,25 @@ export function TabCargar({ puedeResolver }: { puedeResolver: boolean }) {
       }),
     [lista.pedidos, ajustes]
   );
-  const seleccionados = useMemo(() => pedidos.filter((p) => lista.seleccion.has(p.id)), [pedidos, lista.seleccion]);
-  const base = seleccionados.length > 0 ? seleccionados : pedidos;
-  const totales = useMemo(() => totalesPorProducto(base, lista.catalogo), [base, lista.catalogo]);
+  const totales = useMemo(() => totalesPorProducto(pedidos, lista.catalogo), [pedidos, lista.catalogo]);
 
-  const abrirModal = () => {
+  // Pedidos por ruta y día: cada ruta la recorre un solo piloto ese día, así que se cargan completos.
+  const grupos = useMemo(() => {
+    const mapa = new Map<string, { clave: string; nombre: string; fecha: string; pedidos: PedidoArtesano[] }>();
+
+    for (const p of pedidos) {
+      const clave = `${p.ruta_id}|${p.fecha_requerida}`;
+      const grupo = mapa.get(clave) ?? { clave, nombre: p.nombre_ruta, fecha: p.fecha_requerida, pedidos: [] };
+      grupo.pedidos.push(p);
+      mapa.set(clave, grupo);
+    }
+
+    return [...mapa.values()].sort((a, b) => a.fecha.localeCompare(b.fecha) || a.nombre.localeCompare(b.nombre, "es"));
+  }, [pedidos]);
+
+  const cargarRuta = (grupo: { nombre: string; fecha: string; pedidos: PedidoArtesano[] }) => {
     cargarPilotos();
-    setCargandoModal(true);
-  };
-
-  const cerrarPdf = () => {
-    if (urlPdf) window.URL.revokeObjectURL(urlPdf);
-    setUrlPdf(null);
+    setRutaACargar({ ids: grupo.pedidos.map((p) => p.id), nombre: grupo.nombre, fecha: grupo.fecha });
   };
 
   const aplicarAjuste = (pedido: PedidoArtesano, cantidades: Record<string, number> | null) => {
@@ -562,7 +604,9 @@ export function TabCargar({ puedeResolver }: { puedeResolver: boolean }) {
   };
 
   const confirmarCarga = async (codigoPiloto: number) => {
-    const ids = seleccionados.map((p) => p.id);
+    if (!rutaACargar) return;
+
+    const ids = rutaACargar.ids;
     const ajustesApi = Object.fromEntries(
       ids
         .filter((id) => ajustes[id])
@@ -574,61 +618,23 @@ export function TabCargar({ puedeResolver }: { puedeResolver: boolean }) {
     const { pedidos: cargados, errores } = await cargarPedidosArtesano(ids, codigoPiloto, ajustesApi, versiones);
     const idsCargados = cargados.map((p) => p.id);
 
-    setCargandoModal(false);
-    lista.setSeleccion(new Set());
+    setRutaACargar(null);
     setAjustes((previos) => Object.fromEntries(Object.entries(previos).filter(([id]) => !idsCargados.includes(id))));
     lista.recargar();
 
     if (errores.length > 0) lista.setError(errores.join(" | "));
 
-    try {
-      setUrlPdf(await getPdfEnviosArtesano(idsCargados));
-      setAviso(`${idsCargados.length} pedido(s) cargado(s).`);
-    } catch (err) {
-      lista.setError(
-        `Los pedidos se cargaron, pero no se pudo generar el PDF (${err instanceof Error ? err.message : "error"}). Reimprímelo desde "Cargados".`
-      );
-    }
+    if (idsCargados.length > 0) setAviso(`${idsCargados.length} pedido(s) cargado(s).`);
   };
 
   return (
     <>
-      <Filtros {...lista} />
+      <Filtros {...lista} unaFecha />
 
       {aviso && <BannerMensaje tipo="ok" texto={aviso} onCerrar={() => setAviso(null)} />}
       {lista.error && <BannerMensaje tipo="error" texto={lista.error} onCerrar={() => lista.setError(null)} />}
 
-      <PanelTotales
-        titulo={seleccionados.length > 0 ? `Totales de ${seleccionados.length} pedido(s) seleccionado(s)` : `Totales de los ${pedidos.length} pedido(s) por cargar`}
-        totales={totales}
-      />
-
-      {puedeResolver && pedidos.length > 0 && (
-        <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-2 bg-sky-50 border border-sky-200 rounded-xl px-4 py-2.5 mb-4 shadow-md">
-          <p className="text-sm text-sky-800">
-            {seleccionados.length > 0 ? `${seleccionados.length} de ${pedidos.length} pedido(s) seleccionado(s)` : `${pedidos.length} pedido(s) por cargar`}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {seleccionados.length < pedidos.length && (
-              <Button onClick={() => lista.setSeleccion(new Set(pedidos.map((p) => p.id)))} size="sm" variant="outline">
-                <CheckSquare size={14} className="mr-1.5" />
-                Seleccionar todos
-              </Button>
-            )}
-            {seleccionados.length > 0 && (
-              <Button onClick={() => lista.setSeleccion(new Set())} size="sm" variant="outline">
-                Quitar selección
-              </Button>
-            )}
-            {seleccionados.length > 0 && (
-              <Button onClick={abrirModal} size="sm" variant="success">
-                <Printer size={14} className="mr-1.5" />
-                Cargar e imprimir
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
+      <PanelTotales titulo={`Totales de los ${pedidos.length} pedido(s) por cargar`} totales={totales} />
 
       {lista.cargando && pedidos.length === 0 && (
         <div className="flex items-center justify-center py-14 text-gray-400">
@@ -638,31 +644,57 @@ export function TabCargar({ puedeResolver }: { puedeResolver: boolean }) {
 
       {!lista.cargando && !lista.error && pedidos.length === 0 && <ListaVacia texto="No hay pedidos por cargar." />}
 
-      {pedidos.length > 0 && (
-        <div className="space-y-2.5">
-          {pedidos.map((pedido) => (
-            <TarjetaEnvio
-              key={pedido.id}
-              pedido={pedido}
-              seleccionado={lista.seleccion.has(pedido.id)}
-              seleccionable={puedeResolver}
-              onSeleccionar={() => lista.alternar(pedido.id)}
-              acciones={
-                puedeResolver ? (
-                  <>
-                    <Button onClick={() => setRechazando(pedido)} variant="outline" size="sm" className="text-red-600 hover:text-red-700">
-                      <XCircle size={14} className="mr-1.5" />
-                      Rechazar
+      {grupos.length > 0 && (
+        <div className="space-y-6">
+          {grupos.map((grupo) => {
+            const ids = grupo.pedidos.map((p) => p.id);
+            const resumen = totalesPorProducto(grupo.pedidos, lista.catalogo);
+
+            return (
+              <section key={grupo.clave} className="space-y-2.5">
+                <div className="flex flex-wrap items-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3">
+                  <MapPin size={16} className="text-[#2183AE] shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800">
+                      {grupo.nombre}{" "}
+                      <span className="text-gray-400 font-normal">
+                        · {formatearFechaCorta(grupo.fecha)} · {ids.length} pedido(s)
+                      </span>
+                    </p>
+                    {resumen.length > 0 && (
+                      <p className="text-xs text-gray-500 truncate">{resumen.map((t) => `${t.descripcion} ${t.cantidad}`).join(" · ")}</p>
+                    )}
+                  </div>
+                  {puedeResolver && (
+                    <Button onClick={() => cargarRuta(grupo)} size="sm" variant="success">
+                      <Truck size={14} className="mr-1.5" />
+                      Cargar ruta
                     </Button>
-                    <Button onClick={() => setAjustando(pedido)} variant="outline" size="sm">
-                      <SlidersHorizontal size={14} className="mr-1.5" />
-                      Ajustar cantidades
-                    </Button>
-                  </>
-                ) : undefined
-              }
-            />
-          ))}
+                  )}
+                </div>
+                {grupo.pedidos.map((pedido) => (
+                  <TarjetaEnvio
+                    key={pedido.id}
+                    pedido={pedido}
+                    acciones={
+                      puedeResolver ? (
+                        <>
+                          <Button onClick={() => setRechazando(pedido)} variant="outline" size="sm" className="text-red-600 hover:text-red-700">
+                            <XCircle size={14} className="mr-1.5" />
+                            Rechazar
+                          </Button>
+                          <Button onClick={() => setAjustando(pedido)} variant="outline" size="sm">
+                            <SlidersHorizontal size={14} className="mr-1.5" />
+                            Ajustar cantidades
+                          </Button>
+                        </>
+                      ) : undefined
+                    }
+                  />
+                ))}
+              </section>
+            );
+          })}
         </div>
       )}
 
@@ -684,25 +716,23 @@ export function TabCargar({ puedeResolver }: { puedeResolver: boolean }) {
         />
       )}
 
-      {cargandoModal && (
+      {rutaACargar && (
         <PilotoModal
-          titulo="Cargar pedidos"
-          subtitulo={`${seleccionados.length} pedido(s) · se autorizan por lo indicado y se imprime un envío por pedido`}
-          textoConfirmar="Cargar e imprimir"
+          titulo="Cargar ruta"
+          subtitulo={`${rutaACargar.nombre} · ${formatearFechaCorta(rutaACargar.fecha)} · ${rutaACargar.ids.length} pedido(s) con el mismo piloto`}
+          textoConfirmar="Cargar"
           pilotos={pilotos}
           cargandoPilotos={cargandoPilotos}
           pilotoInicial=""
-          onClose={() => setCargandoModal(false)}
+          onClose={() => setRutaACargar(null)}
           onConfirmar={confirmarCarga}
         />
       )}
-
-      {urlPdf && <VisorPdf url={urlPdf} onClose={cerrarPdf} />}
     </>
   );
 }
 
-// Pestaña: cargados (reimprimir y cambiar piloto)
+// Pestaña: cargados (reimprimir y cambiar piloto; la entrega se hace desde la PioApp)
 export function TabCargados({ puedeResolver }: { puedeResolver: boolean }) {
   const lista = useListaEnvios("CARGADO");
   const { pilotos, cargandoPilotos, cargarPilotos } = usePilotos();
@@ -710,31 +740,10 @@ export function TabCargados({ puedeResolver }: { puedeResolver: boolean }) {
   const [cambiandoPiloto, setCambiandoPiloto] = useState(false);
   const [generando, setGenerando] = useState(false);
   const [urlPdf, setUrlPdf] = useState<string | null>(null);
-  const [confirmandoEntrega, setConfirmandoEntrega] = useState(false);
-  const [entregando, setEntregando] = useState(false);
 
   const { pedidos, seleccionados } = lista;
   const base = seleccionados.length > 0 ? seleccionados : pedidos;
   const totales = useMemo(() => totalesPorProducto(base, lista.catalogo), [base, lista.catalogo]);
-
-  const marcarEntregados = async () => {
-    setEntregando(true);
-    lista.setError(null);
-
-    try {
-      const { pedidos: entregados, errores } = await entregarPedidosArtesano(seleccionados.map((p) => p.id));
-
-      setAviso(`${entregados.length} pedido(s) entregado(s).`);
-      if (errores.length > 0) lista.setError(errores.join(" | "));
-      lista.setSeleccion(new Set());
-      lista.recargar();
-    } catch (err) {
-      lista.setError(err instanceof Error ? err.message : "Error al entregar los pedidos");
-    } finally {
-      setEntregando(false);
-      setConfirmandoEntrega(false);
-    }
-  };
 
   // Código de piloto común a la selección, para precargarlo en el modal.
   const pilotoComun = useMemo(() => {
@@ -806,12 +815,6 @@ export function TabCargados({ puedeResolver }: { puedeResolver: boolean }) {
               {generando ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Printer size={14} className="mr-1.5" />}
               Reimprimir
             </Button>
-            {puedeResolver && (
-              <Button onClick={() => setConfirmandoEntrega(true)} size="sm" variant="success">
-                <CheckCircle2 size={14} className="mr-1.5" />
-                Marcar entregados
-              </Button>
-            )}
           </div>
         </div>
       )}
@@ -833,38 +836,10 @@ export function TabCargados({ puedeResolver }: { puedeResolver: boolean }) {
               seleccionado={lista.seleccion.has(pedido.id)}
               seleccionable
               onSeleccionar={() => lista.alternar(pedido.id)}
-              puedeAdjuntar={puedeResolver}
               onCambio={lista.recargar}
             />
           ))}
         </div>
-      )}
-
-      {confirmandoEntrega && (
-        <ModalBase
-          titulo="Marcar como entregados"
-          subtitulo={`${seleccionados.length} pedido(s)`}
-          deshabilitarCierre={entregando}
-          onClose={() => setConfirmandoEntrega(false)}
-        >
-          <div className="px-6 py-4 space-y-2">
-            <p className="text-sm text-gray-600">
-              Confirma que el cliente ya recibió estos pedidos. Después de marcarlos ya no se les puede cambiar el piloto.
-            </p>
-            <p className="text-xs text-gray-400">
-              Si vas a adjuntar la foto de la hoja firmada, hazlo desde la tarjeta del pedido antes de marcarlo: después ya no aparece en esta pestaña.
-            </p>
-          </div>
-          <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
-            <Button onClick={() => setConfirmandoEntrega(false)} disabled={entregando} variant="outline" size="sm">
-              Cancelar
-            </Button>
-            <Button onClick={marcarEntregados} disabled={entregando} variant="success" size="sm">
-              {entregando && <Loader2 size={14} className="animate-spin mr-1.5" />}
-              Marcar entregados
-            </Button>
-          </div>
-        </ModalBase>
       )}
 
       {cambiandoPiloto && (

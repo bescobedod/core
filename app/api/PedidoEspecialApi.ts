@@ -180,6 +180,11 @@ export async function rechazarPedidoArtesano(id: string, motivo: string): Promis
   return (await enviar("/pedidoArtesano/rechazar", { id, motivo }, "Error al rechazar el pedido")).pedido;
 }
 
+// La asistente cancela un pedido que sigue CREADO.
+export async function cancelarPedidoArtesano(id: string, motivo: string): Promise<PedidoArtesano> {
+  return (await enviar("/pedidoArtesano/cancelar", { id, motivo }, "Error al cancelar el pedido")).pedido;
+}
+
 // Resultado de cargar o entregar: pedidos procesados y errores del resto.
 export interface ResultadoLoteArtesano {
   pedidos: PedidoArtesano[];
@@ -263,21 +268,30 @@ function paramsBusqueda(filtros: FiltrosPedidosArtesano): URLSearchParams {
   return params;
 }
 
-// Excel de los pedidos que cumplen los filtros de la búsqueda (una fila por producto).
-export async function exportarPedidosArtesano(filtros: FiltrosPedidosArtesano = {}): Promise<void> {
-  const response = await authFetch(`/pedidoArtesano/exportarPedidos?${paramsBusqueda(filtros).toString()}`);
+async function descargarExcelArtesano(ruta: string, prefijoArchivo: string, filtros: FiltrosPedidosArtesano, errorPorDefecto: string): Promise<void> {
+  const response = await authFetch(`${ruta}?${paramsBusqueda(filtros).toString()}`);
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.details || data.error || "Error al exportar los pedidos");
+    throw new Error(data.details || data.error || errorPorDefecto);
   }
 
   const url = window.URL.createObjectURL(await response.blob());
   const enlace = document.createElement("a");
   enlace.href = url;
-  enlace.download = `pollo_artesano_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  enlace.download = `${prefijoArchivo}_${new Date().toISOString().slice(0, 10)}.xlsx`;
   document.body.appendChild(enlace);
   enlace.click();
   enlace.remove();
   window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+}
+
+// Excel de los pedidos que cumplen los filtros de la búsqueda (una fila por producto).
+export async function exportarPedidosArtesano(filtros: FiltrosPedidosArtesano = {}): Promise<void> {
+  await descargarExcelArtesano("/pedidoArtesano/exportarPedidos", "pollo_artesano", filtros, "Error al exportar los pedidos");
+}
+
+// Excel con una hoja por cliente, con el formato del control de contabilidad.
+export async function exportarPedidosArtesanoPorCliente(filtros: FiltrosPedidosArtesano = {}): Promise<void> {
+  await descargarExcelArtesano("/pedidoArtesano/exportarPorCliente", "pollo_artesano_clientes", filtros, "Error al exportar el reporte por cliente");
 }

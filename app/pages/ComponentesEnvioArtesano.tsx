@@ -5,7 +5,7 @@ import { Camera, ExternalLink, Loader2 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
-import { getUrlEvidenciaArtesano, rechazarPedidoArtesano, subirEvidenciaArtesano } from "../api/PedidoEspecialApi";
+import { cancelarPedidoArtesano, getUrlEvidenciaArtesano, rechazarPedidoArtesano, subirEvidenciaArtesano } from "../api/PedidoEspecialApi";
 import { PedidoArtesano } from "../types/PedidoEspecialModel";
 import { BannerMensaje, ModalBase } from "./PedidoEspecialComun";
 
@@ -255,6 +255,61 @@ export function RechazarModal({
         <Button onClick={handleRechazar} disabled={guardando || !motivoValido} variant="destructive" size="sm">
           {guardando && <Loader2 size={14} className="animate-spin mr-1.5" />}
           Rechazar pedido
+        </Button>
+      </div>
+    </ModalBase>
+  );
+}
+
+// Modal: cancelar (lo usa la asistente en pedidos creados)
+export function CancelarModal({
+  pedido,
+  onClose,
+  onCancelado,
+}: {
+  pedido: PedidoArtesano;
+  onClose: () => void;
+  onCancelado: (pedido: PedidoArtesano) => void;
+}) {
+  const [motivo, setMotivo] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const motivoValido = motivo.trim().length >= 5;
+
+  const handleCancelar = async () => {
+    setGuardando(true);
+    setError(null);
+
+    try {
+      onCancelado(await cancelarPedidoArtesano(pedido.id, motivo.trim()));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al cancelar el pedido");
+      setGuardando(false);
+    }
+  };
+
+  return (
+    <ModalBase
+      titulo="Cancelar pedido"
+      subtitulo={`${pedido.serie} ${pedido.numero_pedido} · ${pedido.cliente_nombre}`}
+      deshabilitarCierre={guardando}
+      onClose={onClose}
+    >
+      <div className="px-6 py-4 space-y-3">
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Motivo de la cancelación *</label>
+          <Textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} maxLength={500} rows={3} placeholder="Mínimo 5 caracteres" />
+        </div>
+        {error && <BannerMensaje tipo="error" texto={error} />}
+      </div>
+      <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-2">
+        <Button onClick={onClose} disabled={guardando} variant="outline" size="sm">
+          Volver
+        </Button>
+        <Button onClick={handleCancelar} disabled={guardando || !motivoValido} variant="destructive" size="sm">
+          {guardando && <Loader2 size={14} className="animate-spin mr-1.5" />}
+          Cancelar pedido
         </Button>
       </div>
     </ModalBase>

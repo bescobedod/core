@@ -41,6 +41,7 @@ import {
   crearPedidoArtesano,
   editarPedidoArtesano,
   exportarPedidosArtesano,
+  exportarPedidosArtesanoPorCliente,
   getPdfEnviosArtesano,
   getPedidosArtesano,
   getProductosArtesano,
@@ -58,7 +59,7 @@ import {
 import { RutaPollo, TiendaRutaPollo } from "../types/RutaPolloModel";
 import { MUELLES_POLLO } from "./ReporteParametrosModal";
 import { BannerMensaje, ControlesPaginacion, ModalBase, formatearFechaCorta } from "./PedidoEspecialComun";
-import { VisorPdf } from "./ComponentesEnvioArtesano";
+import { CancelarModal, VisorPdf } from "./ComponentesEnvioArtesano";
 
 function hoy(): string {
   return new Date().toISOString().slice(0, 10);
@@ -68,11 +69,12 @@ function nombreMuelle(whsCode: string): string {
   return MUELLES_POLLO.find((m) => m.whs_code === whsCode)?.nombre ?? whsCode;
 }
 
-export const ESTADOS_ARTESANO: EstadoPedidoArtesano[] = ["CREADO", "RECHAZADO", "CARGADO", "ENTREGADO"];
+export const ESTADOS_ARTESANO: EstadoPedidoArtesano[] = ["CREADO", "RECHAZADO", "CANCELADO", "CARGADO", "ENTREGADO"];
 
 export const ESTADO_ARTESANO_CFG: Record<EstadoPedidoArtesano, { label: string; chip: string; icon: ReactNode }> = {
   CREADO: { label: "Creado", chip: "bg-sky-50 text-sky-700 border-sky-200", icon: <Clock size={12} /> },
   RECHAZADO: { label: "Rechazado", chip: "bg-red-50 text-red-700 border-red-200", icon: <XCircle size={12} /> },
+  CANCELADO: { label: "Cancelado", chip: "bg-gray-100 text-gray-600 border-gray-300", icon: <XCircle size={12} /> },
   CARGADO: { label: "Cargado", chip: "bg-violet-50 text-violet-700 border-violet-200", icon: <Truck size={12} /> },
   ENTREGADO: { label: "Entregado", chip: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: <PackageCheck size={12} /> },
 };
@@ -114,6 +116,12 @@ function SeguimientoPedido({ pedido }: { pedido: PedidoArtesano }) {
       valor: `${pedido.rechazado_por} · ${formatearFechaCorta(pedido.fecha_rechazo)}`,
     });
   }
+  if (pedido.cancelado_por) {
+    datos.push({
+      titulo: "Cancelado por",
+      valor: `${pedido.cancelado_por} · ${formatearFechaCorta(pedido.fecha_cancelacion)}`,
+    });
+  }
   if (pedido.nombre_piloto) {
     datos.push({ titulo: "Piloto", valor: pedido.codigo_piloto ? `${pedido.nombre_piloto} (${pedido.codigo_piloto})` : pedido.nombre_piloto });
   }
@@ -130,6 +138,12 @@ function SeguimientoPedido({ pedido }: { pedido: PedidoArtesano }) {
         <div className="bg-red-50 border border-red-100 rounded-lg px-3 py-2">
           <p className="text-[11px] font-medium uppercase tracking-wide text-red-700">Motivo del rechazo</p>
           <p className="text-sm text-gray-700 whitespace-pre-wrap">{pedido.motivo_rechazo}</p>
+        </div>
+      )}
+      {pedido.estado === "CANCELADO" && pedido.motivo_cancelacion && (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-600">Motivo de la cancelación</p>
+          <p className="text-sm text-gray-700 whitespace-pre-wrap">{pedido.motivo_cancelacion}</p>
         </div>
       )}
       {datos.length > 0 && (
@@ -234,6 +248,7 @@ function TarjetaArtesano({
 }) {
   const [abierta, setAbierta] = useState(false);
   const [completandoPago, setCompletandoPago] = useState(false);
+  const [cancelando, setCancelando] = useState(false);
   const [generandoPdf, setGenerandoPdf] = useState(false);
   const [urlPdf, setUrlPdf] = useState<string | null>(null);
   const [errorPdf, setErrorPdf] = useState<string | null>(null);
@@ -368,7 +383,7 @@ function TarjetaArtesano({
 
               {errorPdf && <p className="text-xs text-red-600">{errorPdf}</p>}
 
-              {((pedido.estado === "CREADO" && onEditar) || puedeImprimir || (puedeCompletarPago && pedido.condicion_pago === "PENDIENTE" && pedido.estado !== "RECHAZADO")) && (
+              {((pedido.estado === "CREADO" && onEditar) || puedeImprimir || (puedeCompletarPago && pedido.condicion_pago === "PENDIENTE" && pedido.estado !== "RECHAZADO" && pedido.estado !== "CANCELADO")) && (
                 <div className="flex flex-wrap justify-end gap-2">
                   {pedido.estado === "CREADO" && onEditar && (
                     <Button onClick={() => onEditar(pedido)} variant="outline" size="sm">
@@ -376,7 +391,13 @@ function TarjetaArtesano({
                       Modificar pedido
                     </Button>
                   )}
-                  {puedeCompletarPago && pedido.condicion_pago === "PENDIENTE" && pedido.estado !== "RECHAZADO" && (
+                  {pedido.estado === "CREADO" && onEditar && (
+                    <Button onClick={() => setCancelando(true)} variant="outline" size="sm">
+                      <XCircle size={14} className="mr-1.5" />
+                      Cancelar pedido
+                    </Button>
+                  )}
+                  {puedeCompletarPago && pedido.condicion_pago === "PENDIENTE" && pedido.estado !== "RECHAZADO" && pedido.estado !== "CANCELADO" && (
                     <Button onClick={() => setCompletandoPago(true)} variant="outline" size="sm">
                       <CreditCard size={14} className="mr-1.5" />
                       Completar pago
@@ -395,6 +416,16 @@ function TarjetaArtesano({
         )}
       </AnimatePresence>
       {urlPdf && <VisorPdf url={urlPdf} onClose={cerrarPdf} />}
+      {cancelando && (
+        <CancelarModal
+          pedido={pedido}
+          onClose={() => setCancelando(false)}
+          onCancelado={() => {
+            setCancelando(false);
+            onCambio?.();
+          }}
+        />
+      )}
       {completandoPago && (
         <CompletarPagoModal
           pedido={pedido}
@@ -521,6 +552,7 @@ function BuscarPedidos({
   const [buscando, setBuscando] = useState(numeroInicial !== "");
   const [yaBusco, setYaBusco] = useState(false);
   const [exportando, setExportando] = useState(false);
+  const [exportandoClientes, setExportandoClientes] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fechasInvertidas = fechaDesde !== "" && fechaHasta !== "" && fechaDesde > fechaHasta;
@@ -606,6 +638,26 @@ function BuscarPedidos({
     }
   };
 
+  // Igual que la anterior, pero con una hoja por cliente.
+  const handleExportarPorCliente = async () => {
+    setExportandoClientes(true);
+    setError(null);
+
+    try {
+      await exportarPedidosArtesanoPorCliente({
+        id_usuario: aplicados.usuario || undefined,
+        estados: aplicados.estado ? [aplicados.estado] : undefined,
+        numero: aplicados.numero.trim() || undefined,
+        fechaDesde: aplicados.fechaDesde || undefined,
+        fechaHasta: aplicados.fechaHasta || undefined,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al exportar el reporte por cliente");
+    } finally {
+      setExportandoClientes(false);
+    }
+  };
+
   const handleLimpiar = () => {
     setUsuario("");
     setEstado("");
@@ -679,6 +731,10 @@ function BuscarPedidos({
           <Button onClick={handleExportar} disabled={exportando || buscando || !yaBusco || pedidos.length === 0} size="sm" variant="outline">
             {exportando ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Download size={14} className="mr-1.5" />}
             Descargar Excel
+          </Button>
+          <Button onClick={handleExportarPorCliente} disabled={exportandoClientes || buscando || !yaBusco || pedidos.length === 0} size="sm" variant="outline">
+            {exportandoClientes ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Download size={14} className="mr-1.5" />}
+            Excel por cliente
           </Button>
         </div>
       </div>
@@ -853,7 +909,6 @@ function NuevoPedido({
   if (!fechaRequerida) problemas.push("Elige la fecha requerida.");
   else if (fechaRequerida < hoy()) problemas.push("La fecha requerida no puede ser anterior a hoy.");
   if (!rutaId) problemas.push("Elige la ruta.");
-  else if (!tiendaId) problemas.push("Elige la tienda de referencia.");
   if (!clienteId) problemas.push("Elige el cliente.");
   else if (direccion.trim() === "" && !cliente?.codigo_empleado) problemas.push("El cliente necesita una dirección de entrega.");
   if (lineas.length === 0 || lineas.some((l) => !(Number(l.cantidad) > 0))) problemas.push("Cada producto necesita una cantidad mayor a 0.");
@@ -867,7 +922,7 @@ function NuevoPedido({
       const datos = {
         fecha_requerida: fechaRequerida,
         ruta_id: rutaId,
-        id_tienda_simphony_referencia: tiendaId,
+        id_tienda_simphony_referencia: tiendaId || null,
         cliente_id: clienteId,
         direccion: direccion.trim(),
         telefono_contacto: telefono.trim() || null,
@@ -923,7 +978,14 @@ function NuevoPedido({
             />
           </div>
           <div className="sm:col-span-2">
-            <Label className="text-xs text-gray-700 block mb-1.5">Tienda de referencia (solo para saber la ruta, no es la entrega)</Label>
+            <div className="flex items-center justify-between mb-1.5">
+              <Label className="text-xs text-gray-700 block">Tienda de referencia (solo para saber la ruta, no es la entrega)</Label>
+              {tiendaId && (
+                <button type="button" onClick={() => setTiendaId("")} className="text-[11px] text-[#2183AE] hover:underline">
+                  Quitar
+                </button>
+              )}
+            </div>
             <Combobox
               options={opcionesTiendas}
               value={tiendaId}
@@ -936,7 +998,7 @@ function NuevoPedido({
                     ? "Cargando tiendas..."
                     : opcionesTiendas.length === 0
                       ? "La ruta no tiene tiendas asignadas"
-                      : "Selecciona una tienda"
+                      : "Sin tienda de referencia"
               }
               searchPlaceholder="Buscar tienda por nombre..."
               emptyMessage="No se encontraron tiendas"
