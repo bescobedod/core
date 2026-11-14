@@ -69,8 +69,8 @@ export interface AsignacionEspecial {
 // Pago por depósito (boleta opcional) o descuento de planilla (código de empleado en las observaciones).
 export type CondicionPagoArtesano = "DEPOSITO" | "PLANILLA" | "PENDIENTE";
 
-// CREADO → CARGADO → ENTREGADO, o CREADO → RECHAZADO (rastro) | CANCELADO (asistente).
-export type EstadoPedidoArtesano = "CREADO" | "RECHAZADO" | "CANCELADO" | "CARGADO" | "ENTREGADO";
+// CREADO → VALIDADO (stock asignado en Pedidos de Pollo) → EN_TRANSITO → ENTREGADO, o CREADO → RECHAZADO (rastro) | CANCELADO (asistente).
+export type EstadoPedidoArtesano = "CREADO" | "VALIDADO" | "RECHAZADO" | "CANCELADO" | "EN_TRANSITO" | "ENTREGADO";
 
 export interface ClienteAvicola {
   id: string;
@@ -165,6 +165,8 @@ export interface FiltrosPedidosArtesano {
   id_usuario?: string;
   estados?: EstadoPedidoArtesano[];
   numero?: string;
+  // Parte del nombre o del NIT del cliente.
+  cliente?: string;
   fechaDesde?: string;
   fechaHasta?: string;
   page?: number;

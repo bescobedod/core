@@ -6,7 +6,7 @@ import { HomeView } from "./pages/HomeView";
 import { PendingOrdersView } from "./pages/PendingOrdersView";
 import { RegisterView } from "./pages/RegisterView";
 import { Home, LogOut, X, ChevronLeft } from "lucide-react";
-import { PedidosPolloView } from "./pages/PedidosPolloView";
+import { PedidosPolloSelector } from "./pages/PedidosPolloSelector";
 import { LoginView } from "./pages/LoginView";
 import { useMsal } from "@azure/msal-react"
 import { loginRequest, msalConfig } from "../authConfig";
@@ -296,7 +296,7 @@ export default function App() {
               </button>
             )}
             {currentView === "home" && <HomeView onNavigate={navigateTo} />}
-            {currentView === "pedidos" && <PedidosPolloView/>}
+            {currentView === "pedidos" && <PedidosPolloSelector />}
             {currentView === "gestionar-pedidos" && <PendingOrdersView />}
             {currentView === "compras" && <PurchaseRequestView onBack={goBack} />}
             {currentView === "asignacion-af" && <FixedAssetsAllocationView onBack={goBack} />}

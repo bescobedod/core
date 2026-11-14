@@ -55,14 +55,14 @@ function nombrePiloto(p: PilotoUsuario) {
   return [p.first_name, p.second_name, p.first_last_name, p.second_last_name].filter(Boolean).join(" ");
 }
 
-function estadoItemStock(item: ComparativoStockItem): "ok" | "parcial" | "sin_stock" | "no_encontrado" {
+export function estadoItemStock(item: ComparativoStockItem): "ok" | "parcial" | "sin_stock" | "no_encontrado" {
   if (!item.encontrado_en_sap) return "no_encontrado";
   if (item.diferencia >= 0) return "ok";
   if (item.stock_disponible > 0) return "parcial";
   return "sin_stock";
 }
 
-const ESTADO_STOCK_CFG = {
+export const ESTADO_STOCK_CFG = {
   ok:            { label: "Cubierto",        chip: "bg-green-50 text-green-700 border-green-200",  icon: <CheckCircle2 size={13} /> },
   parcial:       { label: "Parcial",         chip: "bg-amber-50 text-amber-700 border-amber-200",  icon: <AlertTriangle size={13} /> },
   sin_stock:     { label: "Sin stock",       chip: "bg-red-50 text-red-700 border-red-200",        icon: <XCircle size={13} /> },
@@ -172,7 +172,7 @@ function ResumenRutaPreviewModal({ url, onClose, titulo = "Resumen de ruta" }: R
   );
 }
 
-function calcularAsignacionFifo(ruta: PedidoPosRuta, comparativo: ComparativoStockItem[]): GrupoArticuloFifo[] {
+export function calcularAsignacionFifo(ruta: PedidoPosRuta, comparativo: ComparativoStockItem[]): GrupoArticuloFifo[] {
   const stockPorCodigo = new Map(comparativo.map(c => [c.codigo_producto, c]));
   const gruposMap = new Map<string, GrupoArticuloFifo>();
 
@@ -247,7 +247,7 @@ interface TransporteSectionProps {
   onAsignado: (rutaId: string, camionId: string, camionPlaca: string, pilotoId: number, pilotoNombre: string) => void;
 }
 
-function TransporteSection({ ruta, fecha, puedeEditar, camiones, pilotos, asignacionesDelDia, onAsignado }: TransporteSectionProps) {
+export function TransporteSection({ ruta, fecha, puedeEditar, camiones, pilotos, asignacionesDelDia, onAsignado }: TransporteSectionProps) {
   const [editando, setEditando] = useState(false);
   const [camionId, setCamionId] = useState(ruta.camion_id || "");
   const [pilotoId, setPilotoId] = useState(ruta.piloto_id ? String(ruta.piloto_id) : "");
@@ -450,7 +450,7 @@ interface ComparativoStockModalProps {
   onClose: () => void;
 }
 
-function ComparativoStockModal({ comparativo, fecha, onClose }: ComparativoStockModalProps) {
+export function ComparativoStockModal({ comparativo, fecha, onClose }: ComparativoStockModalProps) {
   const resumen = useMemo(() => {
     let ok = 0, parcial = 0, sinStock = 0, noEncontrado = 0;
     comparativo.forEach(item => {
@@ -533,7 +533,7 @@ interface AsignacionFifoModalProps {
   onGuardar: () => void;
 }
 
-function AsignacionFifoModal({ grupos, fecha, guardando, error, onClose, onCambiarCantidad, onGuardar }: AsignacionFifoModalProps) {
+export function AsignacionFifoModal({ grupos, fecha, guardando, error, onClose, onCambiarCantidad, onGuardar }: AsignacionFifoModalProps) {
   const resumen = useMemo(() => {
     let ok = 0, parcial = 0, sinStock = 0, noEncontrado = 0;
     grupos.forEach(g => {
@@ -636,7 +636,7 @@ function AsignacionFifoModal({ grupos, fecha, guardando, error, onClose, onCambi
   );
 }
 
-function PedidosPolloViewCompleta() {
+function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
   const todayStr = format(new Date(), "yyyy-MM-dd");
   const defaultDate = format(addDays(new Date(), 1), "yyyy-MM-dd");
 
@@ -1223,6 +1223,8 @@ function PedidosPolloViewCompleta() {
         </div>
       </div>
 
+      {selector}
+
       {!candado ? (
         // ------------------------------------------------------------
         // Sin candado activo: elegir ruta + fecha, buscar, y solo
@@ -1680,7 +1682,7 @@ function PedidosPolloViewCompleta() {
 // (candados, transporte, stock, envío a SAP) o la pantalla de solo lectura.
 // Por defecto (sin fila en tbl_menu_rol, o si falla la consulta) se asume
 // 'escritura' — el comportamiento de siempre no cambia para nadie.
-export function PedidosPolloView() {
+export function PedidosPolloView({ selector }: { selector?: ReactNode } = {}) {
   const [nivelPermiso, setNivelPermiso] = useState<NivelPermisoMenu>("escritura");
   const [cargandoPermiso, setCargandoPermiso] = useState(true);
 
@@ -1706,5 +1708,5 @@ export function PedidosPolloView() {
     return <PedidosPolloLecturaView nivelPermiso={nivelPermiso} />;
   }
 
-  return <PedidosPolloViewCompleta />;
+  return <PedidosPolloViewCompleta selector={selector} />;
 }

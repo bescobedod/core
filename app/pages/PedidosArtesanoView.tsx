@@ -19,6 +19,7 @@ import {
   UserPlus,
   Truck,
   CreditCard,
+  CheckCircle2,
   Clock,
   PackageCheck,
   Download,
@@ -69,13 +70,14 @@ function nombreMuelle(whsCode: string): string {
   return MUELLES_POLLO.find((m) => m.whs_code === whsCode)?.nombre ?? whsCode;
 }
 
-export const ESTADOS_ARTESANO: EstadoPedidoArtesano[] = ["CREADO", "RECHAZADO", "CANCELADO", "CARGADO", "ENTREGADO"];
+export const ESTADOS_ARTESANO: EstadoPedidoArtesano[] = ["CREADO", "VALIDADO", "RECHAZADO", "CANCELADO", "EN_TRANSITO", "ENTREGADO"];
 
 export const ESTADO_ARTESANO_CFG: Record<EstadoPedidoArtesano, { label: string; chip: string; icon: ReactNode }> = {
   CREADO: { label: "Creado", chip: "bg-sky-50 text-sky-700 border-sky-200", icon: <Clock size={12} /> },
+  VALIDADO: { label: "Validado", chip: "bg-amber-50 text-amber-700 border-amber-200", icon: <CheckCircle2 size={12} /> },
   RECHAZADO: { label: "Rechazado", chip: "bg-red-50 text-red-700 border-red-200", icon: <XCircle size={12} /> },
   CANCELADO: { label: "Cancelado", chip: "bg-gray-100 text-gray-600 border-gray-300", icon: <XCircle size={12} /> },
-  CARGADO: { label: "Cargado", chip: "bg-violet-50 text-violet-700 border-violet-200", icon: <Truck size={12} /> },
+  EN_TRANSITO: { label: "En tránsito", chip: "bg-violet-50 text-violet-700 border-violet-200", icon: <Truck size={12} /> },
   ENTREGADO: { label: "Entregado", chip: "bg-emerald-50 text-emerald-700 border-emerald-200", icon: <PackageCheck size={12} /> },
 };
 
@@ -180,7 +182,7 @@ function CompletarPagoModal({
     setError(null);
 
     try {
-      await completarPagoArtesano(pedido.id, condicion, condicion === "DEPOSITO" ? boleta.trim() || null : null);
+      await completarPagoArtesano(pedido.id, condicion, condicion === "DEPOSITO" ? boleta.trim() : null);
       onCompletado();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo registrar el pago");
@@ -213,7 +215,7 @@ function CompletarPagoModal({
 
         {condicion === "DEPOSITO" ? (
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Número de boleta (opcional)</label>
+            <label className="block text-xs text-gray-500 mb-1">Número de boleta *</label>
             <Input value={boleta} onChange={(e) => setBoleta(e.target.value)} maxLength={50} />
           </div>
         ) : (
@@ -226,7 +228,7 @@ function CompletarPagoModal({
         <Button onClick={onClose} disabled={guardando} variant="outline" size="sm">
           Cancelar
         </Button>
-        <Button onClick={guardar} disabled={guardando} variant="success" size="sm">
+        <Button onClick={guardar} disabled={guardando || (condicion === "DEPOSITO" && boleta.trim() === "")} variant="success" size="sm">
           {guardando && <Loader2 size={14} className="animate-spin mr-1.5" />}
           Registrar pago
         </Button>
@@ -254,7 +256,7 @@ function TarjetaArtesano({
   const [errorPdf, setErrorPdf] = useState<string | null>(null);
 
   // El envío se imprime solo cuando el pedido ya se cargó.
-  const puedeImprimir = pedido.estado === "CARGADO" || pedido.estado === "ENTREGADO";
+  const puedeImprimir = pedido.estado === "EN_TRANSITO" || pedido.estado === "ENTREGADO";
 
   const imprimir = async () => {
     setGenerandoPdf(true);
@@ -520,6 +522,7 @@ interface FiltrosBusqueda {
   usuario: string;
   estado: "" | EstadoPedidoArtesano;
   numero: string;
+  cliente: string;
   fechaDesde: string;
   fechaHasta: string;
 }
@@ -536,6 +539,7 @@ function BuscarPedidos({
   const [usuario, setUsuario] = useState("");
   const [estado, setEstado] = useState<"" | EstadoPedidoArtesano>("");
   const [numero, setNumero] = useState(numeroInicial);
+  const [cliente, setCliente] = useState("");
   const [fechaDesde, setFechaDesde] = useState("");
   const [fechaHasta, setFechaHasta] = useState("");
   // Filtros con los que se hizo la última búsqueda: al cambiar de página se
@@ -544,6 +548,7 @@ function BuscarPedidos({
     usuario: "",
     estado: "",
     numero: numeroInicial,
+    cliente: "",
     fechaDesde: "",
     fechaHasta: "",
   });
@@ -572,6 +577,7 @@ function BuscarPedidos({
         id_usuario: filtros.usuario || undefined,
         estados: filtros.estado ? [filtros.estado] : undefined,
         numero: filtros.numero.trim() || undefined,
+        cliente: filtros.cliente.trim() || undefined,
         fechaDesde: filtros.fechaDesde || undefined,
         fechaHasta: filtros.fechaHasta || undefined,
         page: pagina,
@@ -613,7 +619,7 @@ function BuscarPedidos({
   }, [numeroInicial]);
 
   const handleBuscar = () => {
-    const filtros: FiltrosBusqueda = { usuario, estado, numero, fechaDesde, fechaHasta };
+    const filtros: FiltrosBusqueda = { usuario, estado, numero, cliente, fechaDesde, fechaHasta };
     setAplicados(filtros);
     buscar(1, filtros);
   };
@@ -628,6 +634,7 @@ function BuscarPedidos({
         id_usuario: aplicados.usuario || undefined,
         estados: aplicados.estado ? [aplicados.estado] : undefined,
         numero: aplicados.numero.trim() || undefined,
+        cliente: aplicados.cliente.trim() || undefined,
         fechaDesde: aplicados.fechaDesde || undefined,
         fechaHasta: aplicados.fechaHasta || undefined,
       });
@@ -648,6 +655,7 @@ function BuscarPedidos({
         id_usuario: aplicados.usuario || undefined,
         estados: aplicados.estado ? [aplicados.estado] : undefined,
         numero: aplicados.numero.trim() || undefined,
+        cliente: aplicados.cliente.trim() || undefined,
         fechaDesde: aplicados.fechaDesde || undefined,
         fechaHasta: aplicados.fechaHasta || undefined,
       });
@@ -662,6 +670,7 @@ function BuscarPedidos({
     setUsuario("");
     setEstado("");
     setNumero("");
+    setCliente("");
     setFechaDesde("");
     setFechaHasta("");
     setPedidos([]);
@@ -673,7 +682,7 @@ function BuscarPedidos({
   return (
     <>
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Usuario</label>
             <select
@@ -707,6 +716,10 @@ function BuscarPedidos({
           <div>
             <label className="block text-xs text-gray-500 mb-1">Número de pedido</label>
             <Input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="PA-2026-000001" maxLength={30} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Cliente</label>
+            <Input value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Nombre o NIT" maxLength={100} />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Requerido desde</label>
@@ -913,6 +926,7 @@ function NuevoPedido({
   else if (direccion.trim() === "" && !cliente?.codigo_empleado) problemas.push("El cliente necesita una dirección de entrega.");
   if (lineas.length === 0 || lineas.some((l) => !(Number(l.cantidad) > 0))) problemas.push("Cada producto necesita una cantidad mayor a 0.");
   if (condicionPago === "PLANILLA" && cliente && !cliente.codigo_empleado) problemas.push("El descuento de planilla es solo para clientes con código de empleado.");
+  if (condicionPago === "DEPOSITO" && numeroBoleta.trim() === "") problemas.push("Escribe el número de boleta del depósito.");
 
   const handleGuardar = async () => {
     setEnviando(true);
@@ -1060,42 +1074,55 @@ function NuevoPedido({
           {lineas.map((linea, indice) => {
             const producto = productos.find((p) => p.codigo_producto === linea.codigo_producto);
             const cantidad = Math.max(0, Number(linea.cantidad) || 0);
+            // Unidad en que se pide; el pollo (el que viene en caja) indica además sus libras (3 o 3.5).
+            const unidad = (producto?.unidad_medida ?? "").toLowerCase();
+            const libras = producto?.factor_caja && producto.factor_libras ? ` · ${producto.factor_libras} lbs` : "";
 
             return (
               <div key={linea.codigo_producto} className="border border-gray-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 break-words">{producto?.descripcion_producto ?? linea.codigo_producto}</p>
+                  <p className="text-sm font-medium text-gray-900 break-words">
+                    {producto?.descripcion_producto ?? linea.codigo_producto}
+                    {unidad && (
+                      <span className="ml-2 text-xs font-normal text-gray-500 whitespace-nowrap">
+                        {unidad}
+                        {libras}
+                      </span>
+                    )}
+                  </p>
                   <p className="text-xs text-gray-500 font-mono break-words">{linea.codigo_producto}</p>
                 </div>
                 <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
                   <div>
                     <Label className="text-[10px] uppercase font-bold text-gray-500 block mb-1">Cantidad</Label>
-                    <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden w-fit">
-                      <button
-                        type="button"
-                        onClick={() => actualizarLinea(indice, { cantidad: String(Math.max(1, cantidad - 1)) })}
-                        className="w-9 h-9 flex items-center justify-center text-gray-600 hover:bg-gray-100 active:bg-gray-200 shrink-0"
-                        aria-label="Disminuir cantidad"
-                      >
-                        <Minus className="h-4 w-4" />
-                      </button>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        min="1"
-                        value={linea.cantidad}
-                        onFocus={(e) => e.target.select()}
-                        onChange={(e) => actualizarLinea(indice, { cantidad: e.target.value })}
-                        className="w-14 h-9 text-center text-sm border-x border-gray-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => actualizarLinea(indice, { cantidad: String(cantidad + 1) })}
-                        className="w-9 h-9 flex items-center justify-center text-gray-600 hover:bg-gray-100 active:bg-gray-200 shrink-0"
-                        aria-label="Aumentar cantidad"
-                      >
-                        <Plus className="h-4 w-4" />
-                      </button>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center border border-gray-300 rounded-lg overflow-hidden w-fit">
+                        <button
+                          type="button"
+                          onClick={() => actualizarLinea(indice, { cantidad: String(Math.max(1, cantidad - 1)) })}
+                          className="w-9 h-9 flex items-center justify-center text-gray-600 hover:bg-gray-100 active:bg-gray-200 shrink-0"
+                          aria-label="Disminuir cantidad"
+                        >
+                          <Minus className="h-4 w-4" />
+                        </button>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min="1"
+                          value={linea.cantidad}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => actualizarLinea(indice, { cantidad: e.target.value })}
+                          className="w-14 h-9 text-center text-sm border-x border-gray-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => actualizarLinea(indice, { cantidad: String(cantidad + 1) })}
+                          className="w-9 h-9 flex items-center justify-center text-gray-600 hover:bg-gray-100 active:bg-gray-200 shrink-0"
+                          aria-label="Aumentar cantidad"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                   {lineas.length > 1 && (
@@ -1161,7 +1188,7 @@ function NuevoPedido({
                 exit={{ opacity: 0, y: -5 }}
                 transition={{ duration: 0.2 }}
               >
-                <Label className="text-xs text-gray-700 mb-1.5 block">Número de boleta (opcional)</Label>
+                <Label className="text-xs text-gray-700 mb-1.5 block">Número de boleta *</Label>
                 <Input value={numeroBoleta} onChange={(e) => setNumeroBoleta(e.target.value)} maxLength={50} className="h-11" />
               </motion.div>
             )}

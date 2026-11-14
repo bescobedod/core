@@ -79,7 +79,7 @@ export function EvidenciaEntrega({
   };
 
   const puedeVer = pedido.tiene_evidencia_entrega;
-  const aplica = pedido.estado === "CARGADO" || pedido.estado === "ENTREGADO";
+  const aplica = pedido.estado === "EN_TRANSITO" || pedido.estado === "ENTREGADO";
 
   if (!aplica || (!puedeVer && !puedeAdjuntar)) return null;
 

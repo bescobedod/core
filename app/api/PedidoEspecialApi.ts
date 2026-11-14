@@ -110,6 +110,7 @@ export async function getPedidosArtesano(filtros: FiltrosPedidosArtesano = {}): 
   if (filtros.id_usuario) params.set("id_usuario", filtros.id_usuario);
   if (filtros.estados && filtros.estados.length > 0) params.set("estado", filtros.estados.join(","));
   if (filtros.numero) params.set("numero", filtros.numero);
+  if (filtros.cliente) params.set("cliente", filtros.cliente);
   if (filtros.fechaDesde) params.set("fecha_desde", filtros.fechaDesde);
   if (filtros.fechaHasta) params.set("fecha_hasta", filtros.fechaHasta);
   if (filtros.page) params.set("page", String(filtros.page));
@@ -154,11 +155,11 @@ export async function editarPedidoArtesano(payload: EditarPedidoArtesanoPayload)
   return (await enviar("/pedidoArtesano/editarPedido", payload, "Error al modificar el pedido")).pedido;
 }
 
-// Rastro: pedidos CREADO (por cargar) o CARGADO, los de entrega más próxima primero.
+// Rastro: pedidos CREADO (por cargar) o EN_TRANSITO, los de entrega más próxima primero.
 export async function getPedidosPendientesArtesano(
   fechaDesde?: string,
   fechaHasta?: string,
-  estado: "CREADO" | "CARGADO" = "CREADO"
+  estado: "CREADO" | "EN_TRANSITO" = "CREADO"
 ): Promise<PedidoArtesano[]> {
   const params = new URLSearchParams({ estado });
   if (fechaDesde) params.set("fecha_desde", fechaDesde);
@@ -262,6 +263,7 @@ function paramsBusqueda(filtros: FiltrosPedidosArtesano): URLSearchParams {
   if (filtros.id_usuario) params.set("id_usuario", filtros.id_usuario);
   if (filtros.estados && filtros.estados.length > 0) params.set("estado", filtros.estados.join(","));
   if (filtros.numero) params.set("numero", filtros.numero);
+  if (filtros.cliente) params.set("cliente", filtros.cliente);
   if (filtros.fechaDesde) params.set("fecha_desde", filtros.fechaDesde);
   if (filtros.fechaHasta) params.set("fecha_hasta", filtros.fechaHasta);
 

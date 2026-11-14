@@ -257,7 +257,7 @@ export function TarjetaEnvio({
               <SlidersHorizontal size={12} /> Ajustado
             </span>
           )}
-          {(pedido.estado === "CARGADO" || pedido.estado === "ENTREGADO") && (
+          {(pedido.estado === "EN_TRANSITO" || pedido.estado === "ENTREGADO") && (
             <span className="text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-full px-2 py-0.5 shrink-0 hidden md:inline-flex items-center gap-1">
               <Truck size={12} /> {pedido.nombre_piloto ?? "Sin piloto"}
             </span>
@@ -365,7 +365,7 @@ export function TarjetaEnvio({
 }
 
 // Carga común de la lista, filtros y selección
-function useListaEnvios(estado: "CREADO" | "CARGADO") {
+function useListaEnvios(estado: "CREADO" | "EN_TRANSITO") {
   // Por defecto se ven los pedidos con entrega de hoy; se pueden cambiar o quitar las fechas.
   const [fechaDesde, setFechaDesde] = useState(hoyLocal);
   const [fechaHasta, setFechaHasta] = useState(hoyLocal);
@@ -734,7 +734,7 @@ export function TabCargar({ puedeResolver }: { puedeResolver: boolean }) {
 
 // Pestaña: cargados (reimprimir y cambiar piloto; la entrega se hace desde la PioApp)
 export function TabCargados({ puedeResolver }: { puedeResolver: boolean }) {
-  const lista = useListaEnvios("CARGADO");
+  const lista = useListaEnvios("EN_TRANSITO");
   const { pilotos, cargandoPilotos, cargarPilotos } = usePilotos();
   const [aviso, setAviso] = useState<string | null>(null);
   const [cambiandoPiloto, setCambiandoPiloto] = useState(false);
