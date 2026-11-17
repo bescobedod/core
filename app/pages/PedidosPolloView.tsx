@@ -31,6 +31,10 @@ import { motion, AnimatePresence } from "motion/react";
 import { getPedidosPos, getComparativoStockPollo, enviarTransferenciaPollo, previsualizarTicketPollo, firmarTicketPollo, previsualizarResumenRutaPollo, previsualizarQrsRutaPollo, previsualizarReporteDetallePollo, previsualizarReporteEnTransitoPollo, descargarExcelReporteDetallePollo, descargarExcelReporteEnTransitoPollo, FormatoReporte } from "../api/PedidoPosApi";
 import { ReporteParametrosModal, FormatoReporteModal, ParametrosReporte } from "./ReporteParametrosModal";
 import { CambiarFechaPedidoModal, BotonCambiarFecha, PedidoCambioFecha } from "./CambiarFechaPedidoModal";
+import { CancelarPedidoModal, BotonCancelarPedido, PedidoCancelacion } from "./CancelarPedidoModal";
+import { SelectBuscable } from "../ui/select-buscable";
+import { getMapaSedes, MapaSedes } from "../api/SedeTransporteApi";
+import { gruposPilotos, gruposCamiones, SedeDespacho } from "./transporteOpciones";
 import { guardarAsignacionCantidades } from "../api/AsignacionApi";
 import { PedidoPosRuta, PedidoPosTienda } from "../types/PedidoPosModel";
 import { ComparativoStockItem } from "../types/StockModel";
@@ -74,6 +78,9 @@ const ESTADO_STOCK_CFG = {
 // no solo mientras va en camino — sigue siendo útil aunque ya esté
 // entregado, parcial, o mixto entre tiendas.
 const ESTADOS_CON_QR = ["EN_TRANSITO", "ENTREGADO", "ENTREGADO_PARCIAL", "MIXTO"];
+
+// Última sede elegida en este navegador (usuarios con más de una sede).
+const CLAVE_SEDE_POLLO = "pedidosPollo.sede";
 
 const ESTADO_PEDIDO_CFG: Record<string, { label: string; chip: string; icon: ReactNode }> = {
   PENDIENTE_ENRIQUECIMIENTO: { label: "Pendiente enriquecimiento", chip: "bg-gray-100 text-gray-500 border-gray-200", icon: <AlertCircle size={12} /> },
@@ -244,10 +251,12 @@ interface TransporteSectionProps {
   camiones: CamionModel[];
   pilotos: PilotoUsuario[];
   asignacionesDelDia: AsignacionTransporte[];
+  sede: SedeDespacho;
+  mapaSedes: MapaSedes | null;
   onAsignado: (rutaId: string, camionId: string, camionPlaca: string, pilotoId: number, pilotoNombre: string) => void;
 }
 
-function TransporteSection({ ruta, fecha, puedeEditar, camiones, pilotos, asignacionesDelDia, onAsignado }: TransporteSectionProps) {
+function TransporteSection({ ruta, fecha, puedeEditar, camiones, pilotos, asignacionesDelDia, sede, mapaSedes, onAsignado }: TransporteSectionProps) {
   const [editando, setEditando] = useState(false);
   const [camionId, setCamionId] = useState(ruta.camion_id || "");
   const [pilotoId, setPilotoId] = useState(ruta.piloto_id ? String(ruta.piloto_id) : "");
@@ -328,30 +337,26 @@ function TransporteSection({ ruta, fecha, puedeEditar, camiones, pilotos, asigna
   return (
     <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/60 space-y-2">
       <div className="flex flex-col sm:flex-row gap-2">
-        <select
-          value={pilotoId}
-          onChange={e => setPilotoId(e.target.value)}
-          className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
-        >
-          <option value="">Seleccionar piloto…</option>
-          {pilotos.map(p => (
-            <option key={p.id_users} value={p.id_users} disabled={pilotosTomados.has(p.id_users)}>
-              {nombrePiloto(p)}{pilotosTomados.has(p.id_users) ? " (ya asignado este día)" : ""}
-            </option>
-          ))}
-        </select>
-        <select
-          value={camionId}
-          onChange={e => setCamionId(e.target.value)}
-          className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
-        >
-          <option value="">Seleccionar camión…</option>
-          {camiones.map(c => (
-            <option key={c.id_camion} value={c.id_camion} disabled={camionesTomados.has(c.id_camion)}>
-              {c.placa}{camionesTomados.has(c.id_camion) ? " (ya asignado este día)" : ""}
-            </option>
-          ))}
-        </select>
+        <div className="flex-1 min-w-0">
+          <SelectBuscable
+            grupos={gruposPilotos(pilotos, { sede, mapa: mapaSedes, tomados: pilotosTomados, valorActual: pilotoId })}
+            value={pilotoId}
+            onChange={setPilotoId}
+            placeholder="Seleccionar piloto…"
+            placeholderBusqueda="Buscar piloto…"
+            mensajeVacio="No hay pilotos con ese nombre"
+          />
+        </div>
+        <div className="flex-1 min-w-0">
+          <SelectBuscable
+            grupos={gruposCamiones(camiones, { sede, mapa: mapaSedes, tomados: camionesTomados, valorActual: camionId })}
+            value={camionId}
+            onChange={setCamionId}
+            placeholder="Seleccionar camión…"
+            placeholderBusqueda="Buscar placa…"
+            mensajeVacio="No hay camiones con esa placa"
+          />
+        </div>
       </div>
       {error && <p className="text-xs text-red-600">{error}</p>}
       <div className="flex items-center gap-2">
@@ -377,7 +382,11 @@ function TransporteSection({ ruta, fecha, puedeEditar, camiones, pilotos, asigna
   );
 }
 
-function StoreCard({ tienda, onCambiarFecha }: { tienda: PedidoPosTienda; onCambiarFecha?: (pedido: PedidoCambioFecha) => void }) {
+function StoreCard({ tienda, onCambiarFecha, onCancelar }: {
+  tienda: PedidoPosTienda;
+  onCambiarFecha?: (pedido: PedidoCambioFecha) => void;
+  onCancelar?: (pedido: PedidoCancelacion) => void;
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -406,21 +415,34 @@ function StoreCard({ tienda, onCambiarFecha }: { tienda: PedidoPosTienda; onCamb
             transition={{ duration: 0.2 }}
             className="overflow-hidden bg-white"
           >
-            {onCambiarFecha && (
+            {(onCambiarFecha || onCancelar) && (
               <div className="flex items-center gap-2 px-6 pt-3 text-xs text-gray-500">
                 <span className="flex-1">
                   Entrega: <span className="font-medium text-gray-700">{tienda.fecha_requerida?.split("-").reverse().join("/")}</span>
                 </span>
-                <BotonCambiarFecha
-                  pedido={{
-                    pedido_id: tienda.pedido_id,
-                    numero_pedido: tienda.numero_pedido,
-                    nombre_tienda: tienda.nombre_tienda || tienda.codigo_tienda,
-                    fecha_requerida: tienda.fecha_requerida,
-                    estado: tienda.estado,
-                  }}
-                  onClick={onCambiarFecha}
-                />
+                {onCambiarFecha && (
+                  <BotonCambiarFecha
+                    pedido={{
+                      pedido_id: tienda.pedido_id,
+                      numero_pedido: tienda.numero_pedido,
+                      nombre_tienda: tienda.nombre_tienda || tienda.codigo_tienda,
+                      fecha_requerida: tienda.fecha_requerida,
+                      estado: tienda.estado,
+                    }}
+                    onClick={onCambiarFecha}
+                  />
+                )}
+                {onCancelar && (
+                  <BotonCancelarPedido
+                    pedido={{
+                      pedido_id: tienda.pedido_id,
+                      numero_pedido: tienda.numero_pedido,
+                      nombre_tienda: tienda.nombre_tienda || tienda.codigo_tienda,
+                      estado: tienda.estado,
+                    }}
+                    onClick={onCancelar}
+                  />
+                )}
               </div>
             )}
             <div className="space-y-1.5 px-3 py-3">
@@ -719,11 +741,25 @@ function PedidosPolloViewCompleta() {
   const [trasladoError, setTrasladoError] = useState<string | null>(null);
 
   const [pedidoCambioFecha, setPedidoCambioFecha] = useState<PedidoCambioFecha | null>(null);
+  const [pedidoCancelacion, setPedidoCancelacion] = useState<PedidoCancelacion | null>(null);
+
+  // Sedes (muelles) del usuario: puede tener varias y elegir con cuál
+  // trabajar. mapaSedes = a qué sede pertenece cada piloto/camión.
+  const [muellesUsuario, setMuellesUsuario] = useState<MuelleUsuario[]>([]);
+  const [mapaSedes, setMapaSedes] = useState<MapaSedes | null>(null);
+  const [cambiandoSede, setCambiandoSede] = useState(false);
+  const [errorCambioSede, setErrorCambioSede] = useState<string | null>(null);
 
   useEffect(() => {
     getAllCamiones().then(setCamiones).catch(() => setCamiones([]));
     getPilotos().then(setPilotos).catch(() => setPilotos([]));
+    // Si falla, los dropdowns muestran todo como "Sin sede asignada".
+    getMapaSedes().then(setMapaSedes).catch(() => setMapaSedes(null));
   }, []);
+
+  const sedeDespacho: SedeDespacho | null = muelle
+    ? { whs_code_origen: muelle.whs_code_origen, nombre: muelle.nombre_muelle || muelle.whs_code_origen }
+    : null;
 
   // "Trasladar Envío": disponible mientras la ruta sigue EN_TRANSITO, sin
   // depender del candado (ya está liberado en este punto). Reusa el mismo
@@ -759,25 +795,41 @@ function PedidosPolloViewCompleta() {
     [candado, todayStr]
   );
 
-  // Al montar: obtiene el muelle del usuario y revisa si ya tiene un candado activo
+  // Carga una sede: sus rutas y, si ya hay un candado activo en ella, retoma
+  // esa ruta+fecha.
+  const cargarSede = async (m: MuelleUsuario) => {
+    setMuelle(m);
+    setRutaElegidaId("");
+
+    const candadoExistente = await getCandadoActivo(m.whs_code_origen);
+    const rutas = await getRutasPollo(m.whs_code_origen);
+    setRutasDisponibles(rutas);
+
+    if (candadoExistente) {
+      setCandado(candadoExistente);
+      setRutaElegidaId(candadoExistente.ruta_id);
+      setFechaElegida(candadoExistente.fecha);
+    }
+  };
+
+  // Al montar: obtiene las sedes del usuario y abre la última que usó en
+  // este navegador (o la primera).
   useEffect(() => {
     (async () => {
       setCargandoMuelle(true);
       setErrorMuelle(null);
 
       try {
-        const m = await getMuelleUsuario();
-        setMuelle(m);
+        const respuesta = await getMuelleUsuario();
+        const sedes = respuesta.muelles && respuesta.muelles.length > 0
+          ? respuesta.muelles
+          : [{ whs_code_origen: respuesta.whs_code_origen, nombre_muelle: respuesta.nombre_muelle }];
+        setMuellesUsuario(sedes);
 
-        const candadoExistente = await getCandadoActivo(m.whs_code_origen);
-        const rutas = await getRutasPollo(m.whs_code_origen);
-        setRutasDisponibles(rutas);
+        let guardada: string | null = null;
+        try { guardada = localStorage.getItem(CLAVE_SEDE_POLLO); } catch { /* sin almacenamiento */ }
 
-        if (candadoExistente) {
-          setCandado(candadoExistente);
-          setRutaElegidaId(candadoExistente.ruta_id);
-          setFechaElegida(candadoExistente.fecha);
-        }
+        await cargarSede(sedes.find(s => s.whs_code_origen === guardada) || sedes[0]);
       } catch (err) {
         setErrorMuelle(err instanceof Error ? err.message : "Error al obtener el muelle asignado");
       } finally {
@@ -785,6 +837,29 @@ function PedidosPolloViewCompleta() {
       }
     })();
   }, []);
+
+  // Cambiar de sede solo se permite sin una ruta en proceso (candado).
+  const handleCambiarSede = async (whsCodeOrigen: string) => {
+    const nueva = muellesUsuario.find(s => s.whs_code_origen === whsCodeOrigen);
+    if (!nueva || candado || nueva.whs_code_origen === muelle?.whs_code_origen) return;
+
+    try { localStorage.setItem(CLAVE_SEDE_POLLO, nueva.whs_code_origen); } catch { /* sin almacenamiento */ }
+
+    // La pestaña se marca de inmediato; la carga se indica dentro de ella
+    // (no se reemplaza la pantalla completa).
+    setCambiandoSede(true);
+    setErrorCambioSede(null);
+    setStockComparativo(null);
+    setAsignacionFifo(null);
+
+    try {
+      await cargarSede(nueva);
+    } catch (err) {
+      setErrorCambioSede(err instanceof Error ? err.message : "Error al cargar la sede");
+    } finally {
+      setCambiandoSede(false);
+    }
+  };
 
   // Cuando hay un candado activo (ruta+fecha ya tomada), carga el pedido de esa ruta
   useEffect(() => {
@@ -1214,7 +1289,7 @@ function PedidosPolloViewCompleta() {
           <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm shrink-0">
             <ShoppingCart className="h-6 w-6 text-white" />
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <h2 className="text-white text-lg font-semibold leading-tight">Pedidos de Pollo</h2>
             <p className="text-sm text-white/90 mt-0.5 flex items-center gap-1.5">
               <Anchor size={13} /> Muelle: {muelle.nombre_muelle} ({muelle.whs_code_origen})
@@ -1222,6 +1297,42 @@ function PedidosPolloViewCompleta() {
           </div>
         </div>
       </div>
+
+      {/* Pestañas de sede: solo si el usuario tiene más de una. Mismo estilo
+          que las pestañas de Pedidos de Insumos - Supervisores. */}
+      {muellesUsuario.length > 1 && (
+        <div className="mb-6 flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap gap-2 bg-white border border-gray-200 rounded-xl p-1.5 shadow-sm w-fit">
+            {muellesUsuario.map(s => {
+              const activa = s.whs_code_origen === muelle.whs_code_origen;
+              return (
+                <button
+                  key={s.whs_code_origen}
+                  onClick={() => handleCambiarSede(s.whs_code_origen)}
+                  disabled={!!candado || cambiandoSede}
+                  title={candado && !activa ? "Libera la ruta en proceso para cambiar de sede" : undefined}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 disabled:cursor-not-allowed ${
+                    activa ? "bg-[#2183AE] text-white shadow" : "text-gray-600 hover:bg-gray-100 disabled:opacity-50 disabled:hover:bg-transparent"
+                  }`}
+                >
+                  {cambiandoSede && activa ? <Loader2 className="h-4 w-4 animate-spin" /> : <Anchor className="h-4 w-4" />}
+                  {s.nombre_muelle || s.whs_code_origen}
+                </button>
+              );
+            })}
+          </div>
+          {candado && (
+            <p className="text-xs text-gray-500 flex items-center gap-1">
+              <Lock size={12} /> Libera la ruta en proceso para cambiar de sede
+            </p>
+          )}
+          {errorCambioSede && (
+            <p className="text-xs text-red-600 flex items-center gap-1">
+              <AlertCircle size={12} /> {errorCambioSede}
+            </p>
+          )}
+        </div>
+      )}
 
       {!candado ? (
         // ------------------------------------------------------------
@@ -1349,26 +1460,26 @@ function PedidosPolloViewCompleta() {
                         Cambia el piloto/camión de este envío en tránsito, sin alterar nada más.
                       </p>
                       <div className="flex flex-col sm:flex-row gap-2">
-                        <select
-                          value={trasladoPilotoId}
-                          onChange={e => setTrasladoPilotoId(e.target.value)}
-                          className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
-                        >
-                          <option value="">Seleccionar piloto…</option>
-                          {pilotos.map(p => (
-                            <option key={p.id_users} value={p.id_users}>{nombrePiloto(p)}</option>
-                          ))}
-                        </select>
-                        <select
-                          value={trasladoCamionId}
-                          onChange={e => setTrasladoCamionId(e.target.value)}
-                          className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
-                        >
-                          <option value="">Seleccionar camión…</option>
-                          {camiones.map(c => (
-                            <option key={c.id_camion} value={c.id_camion}>{c.placa}</option>
-                          ))}
-                        </select>
+                        <div className="flex-1 min-w-0">
+                          <SelectBuscable
+                            grupos={gruposPilotos(pilotos, { sede: sedeDespacho, mapa: mapaSedes, tomados: new Set(), valorActual: trasladoPilotoId })}
+                            value={trasladoPilotoId}
+                            onChange={setTrasladoPilotoId}
+                            placeholder="Seleccionar piloto…"
+                            placeholderBusqueda="Buscar piloto…"
+                            mensajeVacio="No hay pilotos con ese nombre"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <SelectBuscable
+                            grupos={gruposCamiones(camiones, { sede: sedeDespacho, mapa: mapaSedes, tomados: new Set(), valorActual: trasladoCamionId })}
+                            value={trasladoCamionId}
+                            onChange={setTrasladoCamionId}
+                            placeholder="Seleccionar camión…"
+                            placeholderBusqueda="Buscar placa…"
+                            mensajeVacio="No hay camiones con esa placa"
+                          />
+                        </div>
                       </div>
                       {trasladoError && <p className="text-xs text-red-600">{trasladoError}</p>}
                       <div className="flex items-center gap-2">
@@ -1405,7 +1516,7 @@ function PedidosPolloViewCompleta() {
               )}
               <div className="space-y-2">
                 {previewRuta.tiendas.map(tienda => (
-                  <StoreCard key={tienda.pedido_id} tienda={tienda} onCambiarFecha={setPedidoCambioFecha} />
+                  <StoreCard key={tienda.pedido_id} tienda={tienda} onCambiarFecha={setPedidoCambioFecha} onCancelar={setPedidoCancelacion} />
                 ))}
               </div>
             </div>
@@ -1468,6 +1579,8 @@ function PedidosPolloViewCompleta() {
                 camiones={camiones}
                 pilotos={pilotos}
                 asignacionesDelDia={asignacionesDelDia}
+                sede={{ whs_code_origen: muelle.whs_code_origen, nombre: muelle.nombre_muelle || muelle.whs_code_origen }}
+                mapaSedes={mapaSedes}
                 onAsignado={handleAsignado}
               />
             </div>
@@ -1595,7 +1708,7 @@ function PedidosPolloViewCompleta() {
                 <p className="text-xs text-gray-400 mb-3">{pedidoRuta.tiendas.length} tienda{pedidoRuta.tiendas.length !== 1 ? "s" : ""}</p>
                 <div className="space-y-2.5">
                   {pedidoRuta.tiendas.map(tienda => (
-                    <StoreCard key={tienda.pedido_id} tienda={tienda} onCambiarFecha={setPedidoCambioFecha} />
+                    <StoreCard key={tienda.pedido_id} tienda={tienda} onCambiarFecha={setPedidoCambioFecha} onCancelar={setPedidoCancelacion} />
                   ))}
                 </div>
               </div>
@@ -1612,6 +1725,12 @@ function PedidosPolloViewCompleta() {
         pedido={pedidoCambioFecha}
         onClose={() => setPedidoCambioFecha(null)}
         onActualizado={handleRecargarTrasCambioFecha}
+      />
+
+      <CancelarPedidoModal
+        pedido={pedidoCancelacion}
+        onClose={() => setPedidoCancelacion(null)}
+        onCancelado={handleRecargarTrasCambioFecha}
       />
 
       {showFifoModal && asignacionFifo && (

@@ -78,7 +78,7 @@ export function UsuarioMuellePolloView() {
 
   const handleQuitar = async (idUsuario: number) => {
     try {
-      await quitarMuelle(idUsuario);
+      await quitarMuelle(idUsuario, muelleSeleccionado);
       setUsuariosDelMuelle((prev) => prev.filter((u) => u.id_usuario !== idUsuario));
     } catch (err) {
       setErrorUsuarios(err instanceof Error ? err.message : "Error al quitar el usuario del muelle");
@@ -97,7 +97,7 @@ export function UsuarioMuellePolloView() {
           <div>
             <h2 className="text-white text-lg font-semibold leading-tight">Usuarios de Muelle (Pollo)</h2>
             <p className="text-sm text-white/90 mt-0.5">
-              Selecciona un muelle y asígnale los usuarios (rol 5) que lo operan
+              Selecciona un muelle y asígnale los usuarios que lo operan. Un usuario puede estar en varios muelles; en Pedidos de Pollo elige con cuál trabajar.
             </p>
           </div>
         </div>

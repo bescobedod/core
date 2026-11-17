@@ -5,7 +5,24 @@ import { motion, AnimatePresence } from "motion/react";
 import { Loader2, FileText, FileSpreadsheet, X as XIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { DivisionReporte, FormatoReporte, ProductoReporte, getProductosReporte } from "../api/PedidoPosApi";
+import { CategoriaReporteInsumos, DivisionReporte, FormatoReporte, ProductoReporte, getProductosReporte } from "../api/PedidoPosApi";
+import { esJuevesOViernes } from "./CambiarFechaPedidoModal";
+
+const OPCIONES_CATEGORIA: { value: CategoriaReporteInsumos; label: string }[] = [
+  { value: "INSUMOS", label: "Insumos y Activo Fijo" },
+  { value: "VERDURA", label: "Verduras" },
+];
+
+// true si el rango (yyyy-MM-dd, inclusive) tiene al menos un jueves o viernes
+function rangoTieneJuevesOViernes(desde: string, hasta: string): boolean {
+  // Con 2 días seguidos (jue/vie) basta revisar a lo sumo 7 días
+  const inicio = Date.parse(desde);
+  const fin = Date.parse(hasta);
+  for (let t = inicio, n = 0; t <= fin && n < 7; t += 86400000, n++) {
+    if (esJuevesOViernes(new Date(t).toISOString().slice(0, 10))) return true;
+  }
+  return false;
+}
 
 // Mismos muelles que RoutesPolloView/UsuarioMuellePolloView.
 export const MUELLES_POLLO = [
@@ -23,6 +40,8 @@ const OPCIONES_DIVISION: { value: DivisionReporte; label: string }[] = [
 export interface ParametrosReporte {
   // undefined cuando el modal no muestra división (el llamador decide cuál usar).
   division?: DivisionReporte;
+  // Solo en el reporte de insumos: insumos+activo fijo o verduras.
+  categoria?: CategoriaReporteInsumos;
   // Vacío = todos los muelles.
   muelles: string[];
   formato: FormatoReporte;
@@ -70,6 +89,7 @@ export function ReporteParametrosModal({
   const [muellesSeleccionados, setMuellesSeleccionados] = useState<string[]>([]);
   const [division, setDivision] = useState<DivisionReporte>("1,2");
   const [formato, setFormato] = useState<FormatoReporte>("pdf");
+  const [categoria, setCategoria] = useState<CategoriaReporteInsumos>("INSUMOS");
 
   // Búsqueda avanzada: un día o un rango de fechas, y productos.
   const [avanzada, setAvanzada] = useState(false);
@@ -85,21 +105,44 @@ export function ReporteParametrosModal({
   const [busquedaProducto, setBusquedaProducto] = useState("");
 
   const mostrarMuelles = tipoPedido === "POLLO";
+  const mostrarCategoria = tipoPedido === "INSUMOS";
+  const esVerdura = mostrarCategoria && categoria === "VERDURA";
   const sinMuelleElegido = mostrarMuelles && !todosLosMuelles && muellesSeleccionados.length === 0;
 
-  // Los productos se cargan la primera vez que se activa la búsqueda avanzada.
-  useEffect(() => {
-    if (!avanzada || productos.length > 0 || cargandoProductos) return;
+  // Tipo con el que se piden los productos: en insumos depende de la categoría
+  const tipoProductos = tipoPedido === "INSUMOS" ? categoria : tipoPedido;
 
+  // De qué tipo es la lista de productos cargada (null = ninguna todavía)
+  const [productosTipo, setProductosTipo] = useState<string | null>(null);
+
+  // Al cambiar de categoría la selección de productos ya no aplica
+  useEffect(() => {
+    setProductosSeleccionados([]);
+    setBusquedaProducto("");
+  }, [tipoProductos]);
+
+  // Los productos se cargan al activar la búsqueda avanzada, y de nuevo si
+  // cambia la categoría. `cancelado` evita que una respuesta vieja pise la nueva.
+  useEffect(() => {
+    if (!avanzada || productosTipo === tipoProductos) return;
+
+    let cancelado = false;
+    setProductos([]);
     setCargandoProductos(true);
     setErrorProductos(null);
 
-    getProductosReporte(tipoPedido)
-      .then(setProductos)
-      .catch((err) => setErrorProductos(err instanceof Error ? err.message : "Error al obtener los productos"))
-      .finally(() => setCargandoProductos(false));
+    getProductosReporte(tipoProductos)
+      .then((lista) => {
+        if (cancelado) return;
+        setProductos(lista);
+        setProductosTipo(tipoProductos);
+      })
+      .catch((err) => { if (!cancelado) setErrorProductos(err instanceof Error ? err.message : "Error al obtener los productos"); })
+      .finally(() => { if (!cancelado) setCargandoProductos(false); });
+
+    return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [avanzada, tipoPedido]);
+  }, [avanzada, tipoProductos]);
 
   const toggleMuelle = (whsCode: string) => {
     setMuellesSeleccionados((prev) =>
@@ -137,9 +180,24 @@ export function ReporteParametrosModal({
     }
   }
 
+  // Verduras: solo se entregan jueves y viernes (el backend también lo valida)
+  if (!errorFechas && esVerdura) {
+    if (!avanzada || modoFecha === "dia") {
+      const fechaUnica = avanzada ? fechaDia : fecha;
+      if (!esJuevesOViernes(fechaUnica)) {
+        errorFechas = avanzada
+          ? "Los pedidos de verduras solo se entregan jueves y viernes; elige una de esas fechas."
+          : `La fecha ${fecha} no es jueves ni viernes. Cambia la fecha o usa la búsqueda avanzada.`;
+      }
+    } else if (!rangoTieneJuevesOViernes(fechaDesde, fechaHasta)) {
+      errorFechas = "El rango no incluye ningún jueves ni viernes.";
+    }
+  }
+
   const handleGenerar = () => {
     const base: ParametrosReporte = {
       division: mostrarDivision ? division : undefined,
+      categoria: mostrarCategoria ? categoria : undefined,
       muelles: mostrarMuelles && !todosLosMuelles ? muellesSeleccionados : [],
       formato,
     };
@@ -173,6 +231,32 @@ export function ReporteParametrosModal({
         </div>
 
         <div className="px-6 py-5 space-y-5 overflow-y-auto min-h-0">
+          {mostrarCategoria && (
+            <div>
+              <p className="text-sm font-medium text-gray-800 mb-2">Tipo de pedido</p>
+              <div className="flex border border-gray-300 rounded-lg overflow-hidden w-fit">
+                {OPCIONES_CATEGORIA.map((o) => (
+                  <button
+                    key={o.value}
+                    type="button"
+                    onClick={() => setCategoria(o.value)}
+                    className={`px-4 h-9 text-sm font-medium transition-colors ${
+                      categoria === o.value ? "bg-[#2183AE] text-white" : "bg-white text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+              {esVerdura && (
+                <p className="text-[11px] text-gray-400 mt-2">
+                  Solo jueves y viernes. En rango, incluye las tiendas sin pedido de cada jueves y viernes.
+                </p>
+              )}
+              {!avanzada && errorFechas && <p className="text-xs text-amber-600 mt-2">{errorFechas}</p>}
+            </div>
+          )}
+
           {mostrarMuelles && (
             <div>
               <p className="text-sm font-medium text-gray-800 mb-2">Muelles</p>
@@ -411,13 +495,18 @@ interface FormatoReporteModalProps {
   titulo: string;
   cargando: boolean;
   error: string | null;
-  onElegir: (formato: FormatoReporte) => void;
+  // Reportes de insumos: muestra el selector Insumos / Verduras.
+  mostrarCategoria?: boolean;
+  onElegir: (formato: FormatoReporte, categoria?: CategoriaReporteInsumos) => void;
   onClose: () => void;
 }
 
 // Ventana emergente para elegir cómo obtener un reporte que no tiene más
 // parámetros: verlo como PDF o descargarlo en Excel.
-export function FormatoReporteModal({ titulo, cargando, error, onElegir, onClose }: FormatoReporteModalProps) {
+export function FormatoReporteModal({ titulo, cargando, error, mostrarCategoria = false, onElegir, onClose }: FormatoReporteModalProps) {
+  const [categoria, setCategoria] = useState<CategoriaReporteInsumos>("INSUMOS");
+  const elegir = (formato: FormatoReporte) => onElegir(formato, mostrarCategoria ? categoria : undefined);
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={cargando ? undefined : onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
@@ -431,12 +520,33 @@ export function FormatoReporteModal({ titulo, cargando, error, onElegir, onClose
           </button>
         </div>
 
+        {mostrarCategoria && (
+          <div className="px-6 pt-5">
+            <p className="text-sm font-medium text-gray-800 mb-2">Tipo de pedido</p>
+            <div className="flex border border-gray-300 rounded-lg overflow-hidden w-fit">
+              {OPCIONES_CATEGORIA.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => setCategoria(o.value)}
+                  disabled={cargando}
+                  className={`px-4 h-9 text-sm font-medium transition-colors ${
+                    categoria === o.value ? "bg-[#2183AE] text-white" : "bg-white text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="px-6 py-5 grid grid-cols-2 gap-3">
-          <Button onClick={() => onElegir("pdf")} disabled={cargando} variant="outline" className="h-20 flex-col gap-1.5">
+          <Button onClick={() => elegir("pdf")} disabled={cargando} variant="outline" className="h-20 flex-col gap-1.5">
             <FileText size={22} />
             Generar PDF
           </Button>
-          <Button onClick={() => onElegir("excel")} disabled={cargando} variant="outline" className="h-20 flex-col gap-1.5">
+          <Button onClick={() => elegir("excel")} disabled={cargando} variant="outline" className="h-20 flex-col gap-1.5">
             <FileSpreadsheet size={22} />
             Descargar Excel
           </Button>

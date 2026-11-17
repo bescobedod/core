@@ -5,6 +5,7 @@ import {
   CrearRutaInsumosPayload,
   AsignarTiendaRutaInsumosPayload,
   CandadoRutaInsumos,
+  TipoRutaInsumos,
 } from '../types/RutaInsumoModel';
 import { authFetch } from '../utils/auth-fetch';
 
@@ -46,8 +47,10 @@ export async function actualizarRutaInsumos(rutaId: string, nombreRuta: string, 
   return data.ruta;
 }
 
-export async function buscarTiendasPdv(query: string): Promise<TiendaPdvBusqueda[]> {
-  const params = new URLSearchParams({ query });
+// tipoRuta decide contra qué asignaciones se marca "ya_asignada": una tienda
+// puede estar a la vez en una ruta de insumos y en una de verduras.
+export async function buscarTiendasPdv(query: string, tipoRuta: TipoRutaInsumos = 'INSUMOS'): Promise<TiendaPdvBusqueda[]> {
+  const params = new URLSearchParams({ query, tipo_ruta: tipoRuta });
   const response = await authFetch(`/rutaInsumos/buscarTiendasPdv?${params.toString()}`);
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
@@ -79,11 +82,12 @@ export async function asignarTiendaRuta(payload: AsignarTiendaRutaInsumosPayload
   }
 }
 
-export async function quitarTiendaDeRuta(idTiendaSimphony: string): Promise<void> {
+// rutaId limita el cierre a esa ruta, para no tocar la asignación del otro tipo
+export async function quitarTiendaDeRuta(idTiendaSimphony: string, rutaId: string): Promise<void> {
   const response = await authFetch(`/rutaInsumos/quitarTiendaDeRuta`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id_tienda_simphony: idTiendaSimphony })
+    body: JSON.stringify({ id_tienda_simphony: idTiendaSimphony, ruta_id: rutaId })
   });
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));

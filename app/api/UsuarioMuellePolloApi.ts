@@ -39,8 +39,10 @@ export async function asignarMuelle(
   }
 }
 
-export async function quitarMuelle(idUsuario: number): Promise<void> {
-  const response = await authFetch(`/usuario-muelle-pollo/quitarMuelle/${idUsuario}`, {
+// Quita solo ese muelle al usuario; si tiene otros, los conserva.
+export async function quitarMuelle(idUsuario: number, whsCodeOrigen: string): Promise<void> {
+  const params = new URLSearchParams({ whs_code_origen: whsCodeOrigen });
+  const response = await authFetch(`/usuario-muelle-pollo/quitarMuelle/${idUsuario}?${params.toString()}`, {
     method: 'DELETE',
   });
   const data = await response.json().catch(() => ({}));

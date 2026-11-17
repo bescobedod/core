@@ -2,8 +2,10 @@ import { authFetch } from '../utils/auth-fetch';
 import { TipoRuta } from '../types/CamionRutaModel';
 import { PilotoConClienteSap, ClienteSap } from '../types/PilotoClienteSapModel';
 
-export async function getPilotos(tipo: TipoRuta, query: string): Promise<PilotoConClienteSap[]> {
-  const params = new URLSearchParams({ tipo, query });
+// Sin query trae todos los pilotos con su cliente SAP; con query, solo los que coinciden.
+export async function getPilotos(tipo: TipoRuta, query?: string): Promise<PilotoConClienteSap[]> {
+  const params = new URLSearchParams({ tipo });
+  if (query && query.trim()) params.set('query', query.trim());
 
   const response = await authFetch(`/pilotoClienteSap/getPilotos?${params.toString()}`);
   if (!response.ok) {

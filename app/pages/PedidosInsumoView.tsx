@@ -22,15 +22,19 @@ import {
   FileText,
   Landmark,
   QrCode,
+  Leaf,
 } from "lucide-react";
 import { format, addDays } from "date-fns";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { motion, AnimatePresence } from "motion/react";
-import { getPedidosPos, getComparativoStockInsumos, enviarTransferenciaInsumos, previsualizarTicketInsumos, firmarTicketInsumos, previsualizarResumenRutaInsumos, previsualizarQrsRutaInsumos, previsualizarReporteDetalleInsumos, previsualizarReporteEnTransitoInsumos, descargarExcelReporteDetalleInsumos, descargarExcelReporteEnTransitoInsumos, FormatoReporte } from "../api/PedidoPosApi";
+import { getPedidosPos, getComparativoStockInsumos, enviarTransferenciaInsumos, previsualizarTicketInsumos, firmarTicketInsumos, previsualizarResumenRutaInsumos, previsualizarQrsRutaInsumos, previsualizarReporteDetalleInsumos, previsualizarReporteEnTransitoInsumos, descargarExcelReporteDetalleInsumos, descargarExcelReporteEnTransitoInsumos, FormatoReporte, CategoriaReporteInsumos } from "../api/PedidoPosApi";
 import { ReporteParametrosModal, FormatoReporteModal, ParametrosReporte } from "./ReporteParametrosModal";
 import { CambiarFechaPedidoModal, BotonCambiarFecha, PedidoCambioFecha } from "./CambiarFechaPedidoModal";
+import { CancelarPedidoModal, BotonCancelarPedido, PedidoCancelacion } from "./CancelarPedidoModal";
+import { SelectBuscable } from "../ui/select-buscable";
+import { gruposPilotos, gruposCamiones } from "./transporteOpciones";
 import { guardarAsignacionCantidades } from "../api/AsignacionApi";
 import { PedidoPosRutaInsumos, PedidoPosTiendaInsumos, PedidoPosDetallePedido } from "../types/PedidoPosModel";
 import { ComparativoStockItem } from "../types/StockModel";
@@ -335,30 +339,26 @@ function TransporteSection({ ruta, fecha, puedeEditar, camiones, pilotos, asigna
   return (
     <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/60 space-y-2">
       <div className="flex flex-col sm:flex-row gap-2">
-        <select
-          value={pilotoId}
-          onChange={e => setPilotoId(e.target.value)}
-          className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
-        >
-          <option value="">Seleccionar piloto…</option>
-          {pilotos.map(p => (
-            <option key={p.id_users} value={p.id_users} disabled={pilotosTomados.has(p.id_users)}>
-              {nombrePiloto(p)}{pilotosTomados.has(p.id_users) ? " (ya asignado este día)" : ""}
-            </option>
-          ))}
-        </select>
-        <select
-          value={camionId}
-          onChange={e => setCamionId(e.target.value)}
-          className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
-        >
-          <option value="">Seleccionar camión…</option>
-          {camiones.map(c => (
-            <option key={c.id_camion} value={c.id_camion} disabled={camionesTomados.has(c.id_camion)}>
-              {c.placa}{camionesTomados.has(c.id_camion) ? " (ya asignado este día)" : ""}
-            </option>
-          ))}
-        </select>
+        <div className="flex-1 min-w-0">
+          <SelectBuscable
+            grupos={gruposPilotos(pilotos, { sede: null, mapa: null, tomados: pilotosTomados, valorActual: pilotoId })}
+            value={pilotoId}
+            onChange={setPilotoId}
+            placeholder="Seleccionar piloto…"
+            placeholderBusqueda="Buscar piloto…"
+            mensajeVacio="No hay pilotos con ese nombre"
+          />
+        </div>
+        <div className="flex-1 min-w-0">
+          <SelectBuscable
+            grupos={gruposCamiones(camiones, { sede: null, mapa: null, tomados: camionesTomados, valorActual: camionId })}
+            value={camionId}
+            onChange={setCamionId}
+            placeholder="Seleccionar camión…"
+            placeholderBusqueda="Buscar placa…"
+            mensajeVacio="No hay camiones con esa placa"
+          />
+        </div>
       </div>
       {error && <p className="text-xs text-red-600">{error}</p>}
       <div className="flex items-center gap-2">
@@ -403,38 +403,71 @@ function ListaItemsPedido({ items, iconClassName }: { items: PedidoPosDetallePed
   );
 }
 
-// Fecha de entrega + botón "Cambiar fecha" de uno de los pedidos de la tarjeta.
-function FilaFechaPedido({ pedido, tienda, etiqueta, onCambiarFecha }: {
+// Etiqueta para las rutas de verduras (13/14)
+function BadgeRutaVerduras() {
+  return (
+    <span className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 shrink-0">
+      <Leaf size={11} /> Ruta de verduras
+    </span>
+  );
+}
+
+// Fecha de entrega + botones "Cambiar fecha" y "Cancelar pedido" de uno de
+// los pedidos de la tarjeta.
+function FilaFechaPedido({ pedido, tienda, etiqueta, onCambiarFecha, onCancelar }: {
   pedido: PedidoPosDetallePedido;
   tienda: PedidoPosTiendaInsumos;
   etiqueta: string;
-  onCambiarFecha: (pedido: PedidoCambioFecha) => void;
+  onCambiarFecha?: (pedido: PedidoCambioFecha) => void;
+  onCancelar?: (pedido: PedidoCancelacion) => void;
 }) {
   return (
     <div className="flex items-center gap-2 px-3 pb-1 text-xs text-gray-500">
       <span className="flex-1">
         Entrega: <span className="font-medium text-gray-700">{pedido.fecha_requerida?.split("-").reverse().join("/")}</span>
       </span>
-      <BotonCambiarFecha
-        pedido={{
-          pedido_id: pedido.pedido_id,
-          numero_pedido: pedido.numero_pedido,
-          nombre_tienda: tienda.nombre_tienda || tienda.codigo_tienda,
-          fecha_requerida: pedido.fecha_requerida,
-          estado: pedido.estado,
-          etiqueta,
-        }}
-        onClick={onCambiarFecha}
-      />
+      {onCambiarFecha && (
+        <BotonCambiarFecha
+          pedido={{
+            pedido_id: pedido.pedido_id,
+            numero_pedido: pedido.numero_pedido,
+            nombre_tienda: tienda.nombre_tienda || tienda.codigo_tienda,
+            fecha_requerida: pedido.fecha_requerida,
+            estado: pedido.estado,
+            etiqueta,
+            soloJuevesViernes: pedido.tipo_pedido === "VERDURA",
+          }}
+          onClick={onCambiarFecha}
+        />
+      )}
+      {onCancelar && (
+        <BotonCancelarPedido
+          pedido={{
+            pedido_id: pedido.pedido_id,
+            numero_pedido: pedido.numero_pedido,
+            nombre_tienda: tienda.nombre_tienda || tienda.codigo_tienda,
+            estado: pedido.estado,
+            etiqueta,
+          }}
+          onClick={onCancelar}
+        />
+      )}
     </div>
   );
 }
 
-function StoreCard({ tienda, onCambiarFecha }: { tienda: PedidoPosTiendaInsumos; onCambiarFecha?: (pedido: PedidoCambioFecha) => void }) {
+function StoreCard({ tienda, onCambiarFecha, onCancelar }: {
+  tienda: PedidoPosTiendaInsumos;
+  onCambiarFecha?: (pedido: PedidoCambioFecha) => void;
+  onCancelar?: (pedido: PedidoCancelacion) => void;
+}) {
   const [open, setOpen] = useState(false);
   // Insumos es el bloque principal de la tarjeta; si la tienda solo pidió
   // activo fijo ese día (sin insumos), el activo fijo pasa a ser el principal.
   const principal = tienda.insumos || tienda.activo_fijo;
+  // El bloque "insumos" trae también los pedidos de verduras (CORPORACION RM)
+  const esVerdura = tienda.insumos?.tipo_pedido === "VERDURA";
+  const etiquetaInsumos = esVerdura ? "Verduras" : "Insumos";
 
   if (!principal) return null;
 
@@ -453,6 +486,11 @@ function StoreCard({ tienda, onCambiarFecha }: { tienda: PedidoPosTiendaInsumos;
         <span className="text-xs text-gray-400 shrink-0">{principal.numero_pedido}</span>
         <EstadoPedidoBadge estado={principal.estado} />
         <span className="text-xs text-gray-400 shrink-0">{principal.items.length} ítems</span>
+        {esVerdura && (
+          <span className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 shrink-0">
+            <Leaf size={11} /> Verduras
+          </span>
+        )}
         {tienda.activo_fijo && (
           <span className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 shrink-0">
             <Landmark size={11} /> {tienda.insumos ? "+ Activo Fijo" : "Activo Fijo"}
@@ -472,12 +510,12 @@ function StoreCard({ tienda, onCambiarFecha }: { tienda: PedidoPosTiendaInsumos;
             {tienda.insumos && (
               <div className="space-y-1.5 px-3 py-3">
                 {tienda.activo_fijo && (
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400 px-3 pb-1">Insumos</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400 px-3 pb-1">{etiquetaInsumos}</p>
                 )}
-                {onCambiarFecha && (
-                  <FilaFechaPedido pedido={tienda.insumos} tienda={tienda} etiqueta="Insumos" onCambiarFecha={onCambiarFecha} />
+                {(onCambiarFecha || onCancelar) && (
+                  <FilaFechaPedido pedido={tienda.insumos} tienda={tienda} etiqueta={etiquetaInsumos} onCambiarFecha={onCambiarFecha} onCancelar={onCancelar} />
                 )}
-                <ListaItemsPedido items={tienda.insumos.items} iconClassName="text-sky-500" />
+                <ListaItemsPedido items={tienda.insumos.items} iconClassName={esVerdura ? "text-green-500" : "text-sky-500"} />
               </div>
             )}
             {tienda.activo_fijo && (
@@ -486,8 +524,8 @@ function StoreCard({ tienda, onCambiarFecha }: { tienda: PedidoPosTiendaInsumos;
                   <p className="text-[10px] font-bold uppercase tracking-wide text-purple-500 flex-1">Activo Fijo</p>
                   <EstadoPedidoBadge estado={tienda.activo_fijo.estado} />
                 </div>
-                {onCambiarFecha && (
-                  <FilaFechaPedido pedido={tienda.activo_fijo} tienda={tienda} etiqueta="Activo Fijo" onCambiarFecha={onCambiarFecha} />
+                {(onCambiarFecha || onCancelar) && (
+                  <FilaFechaPedido pedido={tienda.activo_fijo} tienda={tienda} etiqueta="Activo Fijo" onCambiarFecha={onCambiarFecha} onCancelar={onCancelar} />
                 )}
                 <ListaItemsPedido items={tienda.activo_fijo.items} iconClassName="text-purple-500" />
               </div>
@@ -772,6 +810,7 @@ function PedidosInsumosViewCompleta() {
   const [trasladoError, setTrasladoError] = useState<string | null>(null);
 
   const [pedidoCambioFecha, setPedidoCambioFecha] = useState<PedidoCambioFecha | null>(null);
+  const [pedidoCancelacion, setPedidoCancelacion] = useState<PedidoCancelacion | null>(null);
 
   useEffect(() => {
     getAllCamiones().then(setCamiones).catch(() => setCamiones([]));
@@ -1132,16 +1171,18 @@ function PedidosInsumosViewCompleta() {
       const fechaReporte = parametros.fechaDesde ?? fechaElegida;
       const opciones = {
         division: parametros.division,
+        categoria: parametros.categoria,
         fechaHasta: parametros.fechaHasta,
         productos: parametros.productos,
       };
       const esRango = !!parametros.fechaHasta && parametros.fechaHasta > fechaReporte;
+      const sufijoVerduras = parametros.categoria === "VERDURA" ? " — Verduras" : "";
 
       if (parametros.formato === "excel") {
         await descargarExcelReporteDetalleInsumos(fechaReporte, opciones);
       } else {
         const url = await previsualizarReporteDetalleInsumos(fechaReporte, opciones);
-        setReporteTitulo(esRango ? "Detalle de Pedidos por Rango de Fechas" : "Detalle de Pedidos por Tienda");
+        setReporteTitulo((esRango ? "Detalle de Pedidos por Rango de Fechas" : "Detalle de Pedidos por Tienda") + sufijoVerduras);
         setReporteUrl(url);
         setShowReporteModal(true);
       }
@@ -1156,16 +1197,16 @@ function PedidosInsumosViewCompleta() {
 
   // Pedidos EN_TRANSITO sin entregar, de cualquier fecha, en las dos
   // divisiones (cada una en su sección), en PDF o Excel.
-  const handleGenerarReporteEnTransito = async (formato: FormatoReporte) => {
+  const handleGenerarReporteEnTransito = async (formato: FormatoReporte, categoria: CategoriaReporteInsumos = "INSUMOS") => {
     setCargandoEnTransito(true);
     setErrorEnTransito(null);
 
     try {
       if (formato === "excel") {
-        await descargarExcelReporteEnTransitoInsumos();
+        await descargarExcelReporteEnTransitoInsumos(undefined, categoria);
       } else {
-        const url = await previsualizarReporteEnTransitoInsumos();
-        setReporteTitulo("Pedidos en Tránsito — Insumos");
+        const url = await previsualizarReporteEnTransitoInsumos(undefined, categoria);
+        setReporteTitulo(`Pedidos en Tránsito — ${categoria === "VERDURA" ? "Verduras" : "Insumos"}`);
         setReporteUrl(url);
         setShowReporteModal(true);
       }
@@ -1283,7 +1324,9 @@ function PedidosInsumosViewCompleta() {
               >
                 <option value="">Seleccionar ruta…</option>
                 {rutasDisponibles.map(r => (
-                  <option key={r.id} value={r.id}>{r.nombre_ruta} ({r.total_tiendas} tiendas)</option>
+                  <option key={r.id} value={r.id}>
+                    {r.nombre_ruta}{r.tipo_ruta === "VERDURA" ? " · Verduras" : ""} ({r.total_tiendas} tiendas)
+                  </option>
                 ))}
               </select>
             </div>
@@ -1338,6 +1381,7 @@ function PedidosInsumosViewCompleta() {
               <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <p className="text-xs text-gray-400">{previewRuta.tiendas.length} tienda{previewRuta.tiendas.length !== 1 ? "s" : ""} encontradas</p>
                 <EstadoPedidoBadge estado={previewRuta.estado_general} />
+                {previewRuta.es_verdura && <BadgeRutaVerduras />}
                 {previewRuta.sap_docnum && (
                   <span className="text-xs text-gray-400">Doc. SAP: <span className="text-gray-600 font-medium">{previewRuta.sap_docnum}</span></span>
                 )}
@@ -1391,26 +1435,26 @@ function PedidosInsumosViewCompleta() {
                         Cambia el piloto/camión de este envío en tránsito, sin alterar nada más.
                       </p>
                       <div className="flex flex-col sm:flex-row gap-2">
-                        <select
-                          value={trasladoPilotoId}
-                          onChange={e => setTrasladoPilotoId(e.target.value)}
-                          className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
-                        >
-                          <option value="">Seleccionar piloto…</option>
-                          {pilotos.map(p => (
-                            <option key={p.id_users} value={p.id_users}>{nombrePiloto(p)}</option>
-                          ))}
-                        </select>
-                        <select
-                          value={trasladoCamionId}
-                          onChange={e => setTrasladoCamionId(e.target.value)}
-                          className="flex-1 px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
-                        >
-                          <option value="">Seleccionar camión…</option>
-                          {camiones.map(c => (
-                            <option key={c.id_camion} value={c.id_camion}>{c.placa}</option>
-                          ))}
-                        </select>
+                        <div className="flex-1 min-w-0">
+                          <SelectBuscable
+                            grupos={gruposPilotos(pilotos, { sede: null, mapa: null, tomados: new Set(), valorActual: trasladoPilotoId })}
+                            value={trasladoPilotoId}
+                            onChange={setTrasladoPilotoId}
+                            placeholder="Seleccionar piloto…"
+                            placeholderBusqueda="Buscar piloto…"
+                            mensajeVacio="No hay pilotos con ese nombre"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <SelectBuscable
+                            grupos={gruposCamiones(camiones, { sede: null, mapa: null, tomados: new Set(), valorActual: trasladoCamionId })}
+                            value={trasladoCamionId}
+                            onChange={setTrasladoCamionId}
+                            placeholder="Seleccionar camión…"
+                            placeholderBusqueda="Buscar placa…"
+                            mensajeVacio="No hay camiones con esa placa"
+                          />
+                        </div>
                       </div>
                       {trasladoError && <p className="text-xs text-red-600">{trasladoError}</p>}
                       <div className="flex items-center gap-2">
@@ -1447,7 +1491,7 @@ function PedidosInsumosViewCompleta() {
               )}
               <div className="space-y-2">
                 {previewRuta.tiendas.map(tienda => (
-                  <StoreCard key={`${tienda.insumos?.pedido_id ?? ""}-${tienda.activo_fijo?.pedido_id ?? ""}`} tienda={tienda} onCambiarFecha={setPedidoCambioFecha} />
+                  <StoreCard key={`${tienda.insumos?.pedido_id ?? ""}-${tienda.activo_fijo?.pedido_id ?? ""}`} tienda={tienda} onCambiarFecha={setPedidoCambioFecha} onCancelar={setPedidoCancelacion} />
                 ))}
               </div>
             </div>
@@ -1480,6 +1524,7 @@ function PedidosInsumosViewCompleta() {
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="text-sm text-gray-800 font-medium">{rutaActual?.nombre_ruta || "Ruta"}</p>
+                  {(pedidoRuta?.es_verdura || rutaActual?.tipo_ruta === "VERDURA") && <BadgeRutaVerduras />}
                   {pedidoRuta?.estado_general && <EstadoPedidoBadge estado={pedidoRuta.estado_general} />}
                   {pedidoRuta?.sap_docnum && (
                     <span className="text-xs text-gray-400">Doc. SAP: <span className="text-gray-600 font-medium">{pedidoRuta.sap_docnum}</span></span>
@@ -1629,7 +1674,7 @@ function PedidosInsumosViewCompleta() {
                 <p className="text-xs text-gray-400 mb-3">{pedidoRuta.tiendas.length} tienda{pedidoRuta.tiendas.length !== 1 ? "s" : ""}</p>
                 <div className="space-y-2.5">
                   {pedidoRuta.tiendas.map(tienda => (
-                    <StoreCard key={`${tienda.insumos?.pedido_id ?? ""}-${tienda.activo_fijo?.pedido_id ?? ""}`} tienda={tienda} onCambiarFecha={setPedidoCambioFecha} />
+                    <StoreCard key={`${tienda.insumos?.pedido_id ?? ""}-${tienda.activo_fijo?.pedido_id ?? ""}`} tienda={tienda} onCambiarFecha={setPedidoCambioFecha} onCancelar={setPedidoCancelacion} />
                   ))}
                 </div>
               </div>
@@ -1646,6 +1691,12 @@ function PedidosInsumosViewCompleta() {
         pedido={pedidoCambioFecha}
         onClose={() => setPedidoCambioFecha(null)}
         onActualizado={handleRecargarTrasCambioFecha}
+      />
+
+      <CancelarPedidoModal
+        pedido={pedidoCancelacion}
+        onClose={() => setPedidoCancelacion(null)}
+        onCancelado={handleRecargarTrasCambioFecha}
       />
 
       {showFifoModal && asignacionFifo && (
@@ -1694,9 +1745,10 @@ function PedidosInsumosViewCompleta() {
 
       {showFormatoEnTransito && (
         <FormatoReporteModal
-          titulo="Pedidos en tránsito — Insumos"
+          titulo="Pedidos en tránsito"
           cargando={cargandoEnTransito}
           error={errorEnTransito}
+          mostrarCategoria
           onElegir={handleGenerarReporteEnTransito}
           onClose={() => setShowFormatoEnTransito(false)}
         />

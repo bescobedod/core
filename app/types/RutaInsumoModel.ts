@@ -1,9 +1,13 @@
+// Una tienda puede tener una ruta vigente de cada tipo
+export type TipoRutaInsumos = 'INSUMOS' | 'VERDURA';
+
 export interface RutaInsumos {
   id: string;
   nombre_ruta: string;
   whs_code_origen: string;
   whs_code_destino: string;
   activo: boolean;
+  tipo_ruta: TipoRutaInsumos;
   total_tiendas: number;
 }
 
@@ -34,6 +38,7 @@ export interface TiendaRutaInsumos {
 export interface CrearRutaInsumosPayload {
   nombre_ruta: string;
   whs_code_destino: string;
+  tipo_ruta: TipoRutaInsumos;
 }
 
 export interface AsignarTiendaRutaInsumosPayload {

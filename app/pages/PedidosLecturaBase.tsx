@@ -20,14 +20,17 @@ import {
   descargarExcelReporteEnTransitoInsumos,
   DivisionReporte,
   FormatoReporte,
+  CategoriaReporteInsumos,
 } from "../api/PedidoPosApi";
 import { ReporteParametrosModal, FormatoReporteModal, ParametrosReporte } from "./ReporteParametrosModal";
+import { CancelarPedidoModal, BotonCancelarPedido, PedidoCancelacion } from "./CancelarPedidoModal";
 import { getMiDivision } from "../api/UserApi";
 import { PedidoPosItem, PedidoPosRuta, PedidoPosRutaInsumos } from "../types/PedidoPosModel";
 
 const ESTADOS_CON_QR = ["EN_TRANSITO", "ENTREGADO", "ENTREGADO_PARCIAL", "MIXTO"];
 
 interface PedidoNormalizado {
+  pedido_id: string;
   label: string;
   numero_pedido: string;
   estado: string;
@@ -58,6 +61,7 @@ function normalizarPollo(rutas: PedidoPosRuta[]): RutaNormalizada[] {
     r.tiendas.forEach((t) => {
       const codigo = t.codigo_tienda || "";
       const pedido: PedidoNormalizado = {
+        pedido_id: t.pedido_id,
         label: "Pedido",
         numero_pedido: t.numero_pedido,
         estado: t.estado,
@@ -96,10 +100,12 @@ function normalizarInsumos(rutas: PedidoPosRutaInsumos[]): RutaNormalizada[] {
       const codigo = t.codigo_tienda || "";
       const pedidos: PedidoNormalizado[] = [];
       if (t.insumos) {
-        pedidos.push({ label: "Insumos", numero_pedido: t.insumos.numero_pedido, estado: t.insumos.estado, items: t.insumos.items });
+        // El bloque "insumos" trae también los pedidos de verduras
+        const label = t.insumos.tipo_pedido === "VERDURA" ? "Verduras" : "Insumos";
+        pedidos.push({ pedido_id: t.insumos.pedido_id, label, numero_pedido: t.insumos.numero_pedido, estado: t.insumos.estado, items: t.insumos.items });
       }
       if (t.activo_fijo) {
-        pedidos.push({ label: "Activo Fijo", numero_pedido: t.activo_fijo.numero_pedido, estado: t.activo_fijo.estado, items: t.activo_fijo.items });
+        pedidos.push({ pedido_id: t.activo_fijo.pedido_id, label: "Activo Fijo", numero_pedido: t.activo_fijo.numero_pedido, estado: t.activo_fijo.estado, items: t.activo_fijo.items });
       }
 
       const existente = tiendasPorCodigo.get(codigo);
@@ -182,6 +188,7 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
   const [showFormatoEnTransito, setShowFormatoEnTransito] = useState(false);
   const [cargandoEnTransito, setCargandoEnTransito] = useState(false);
   const [errorEnTransito, setErrorEnTransito] = useState<string | null>(null);
+  const [pedidoCancelacion, setPedidoCancelacion] = useState<PedidoCancelacion | null>(null);
 
   useEffect(() => {
     if (nivelPermiso !== "lectura_division") return;
@@ -289,19 +296,20 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
       const fechaReporte = parametros.fechaDesde ?? fecha;
       const avanzadas = { fechaHasta: parametros.fechaHasta, productos: parametros.productos };
       const esRango = !!parametros.fechaHasta && parametros.fechaHasta > fechaReporte;
+      const sufijoVerduras = parametros.categoria === "VERDURA" ? " — Verduras" : "";
 
       if (parametros.formato === "excel") {
         if (tipoPedido === "POLLO") {
           await descargarExcelReporteDetallePollo(fechaReporte, { division, muelles: parametros.muelles, ...avanzadas });
         } else {
-          await descargarExcelReporteDetalleInsumos(fechaReporte, { division, ...avanzadas });
+          await descargarExcelReporteDetalleInsumos(fechaReporte, { division, categoria: parametros.categoria, ...avanzadas });
         }
       } else {
         const url =
           tipoPedido === "POLLO"
             ? await previsualizarReporteDetallePollo(fechaReporte, { division, muelles: parametros.muelles, ...avanzadas })
-            : await previsualizarReporteDetalleInsumos(fechaReporte, { division, ...avanzadas });
-        setReporteTitulo(esRango ? "Detalle de Pedidos por Rango de Fechas" : "Detalle de Pedidos por Tienda");
+            : await previsualizarReporteDetalleInsumos(fechaReporte, { division, categoria: parametros.categoria, ...avanzadas });
+        setReporteTitulo((esRango ? "Detalle de Pedidos por Rango de Fechas" : "Detalle de Pedidos por Tienda") + sufijoVerduras);
         setReporteUrl(url);
         setShowReporteModal(true);
       }
@@ -321,7 +329,7 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
 
   // Pedidos EN_TRANSITO sin entregar, de cualquier fecha. lectura_division
   // solo ve su división; lectura ve las dos (cada una en su sección).
-  const handleGenerarReporteEnTransito = async (formato: FormatoReporte) => {
+  const handleGenerarReporteEnTransito = async (formato: FormatoReporte, categoria: CategoriaReporteInsumos = "INSUMOS") => {
     const division = nivelPermiso === "lectura_division" ? ((miDivision as "1" | "2" | null) ?? undefined) : undefined;
 
     if (nivelPermiso === "lectura_division" && !division) return;
@@ -334,14 +342,15 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
         if (tipoPedido === "POLLO") {
           await descargarExcelReporteEnTransitoPollo(division);
         } else {
-          await descargarExcelReporteEnTransitoInsumos(division);
+          await descargarExcelReporteEnTransitoInsumos(division, categoria);
         }
       } else {
         const url =
           tipoPedido === "POLLO"
             ? await previsualizarReporteEnTransitoPollo(division)
-            : await previsualizarReporteEnTransitoInsumos(division);
-        setReporteTitulo(`Pedidos en Tránsito — ${tipoPedido === "POLLO" ? "Pollo" : "Insumos"}`);
+            : await previsualizarReporteEnTransitoInsumos(division, categoria);
+        const nombreTipo = tipoPedido === "POLLO" ? "Pollo" : categoria === "VERDURA" ? "Verduras" : "Insumos";
+        setReporteTitulo(`Pedidos en Tránsito — ${nombreTipo}`);
         setReporteUrl(url);
         setShowReporteModal(true);
       }
@@ -546,10 +555,23 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
                                 {tienda.pedidos.map((pedido, i) => (
                                   <div key={i} className="border border-gray-100 rounded-lg p-3 bg-gray-50/50">
                                     <div className="flex items-center justify-between gap-2 mb-2">
-                                      <span className="text-xs font-semibold text-gray-700">
+                                      <span className="text-xs font-semibold text-gray-700 flex-1 min-w-0 truncate">
                                         {pedido.label} · {pedido.numero_pedido}
                                       </span>
-                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-600">
+                                      {/* Cancelar: solo lectura por división (lectura simple no puede). */}
+                                      {nivelPermiso === "lectura_division" && (
+                                        <BotonCancelarPedido
+                                          pedido={{
+                                            pedido_id: pedido.pedido_id,
+                                            numero_pedido: pedido.numero_pedido,
+                                            nombre_tienda: tienda.nombre_tienda,
+                                            estado: pedido.estado,
+                                            etiqueta: tipoPedido === "INSUMOS" ? pedido.label : undefined,
+                                          }}
+                                          onClick={setPedidoCancelacion}
+                                        />
+                                      )}
+                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-600 shrink-0">
                                         {pedido.estado}
                                       </span>
                                     </div>
@@ -593,9 +615,10 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
       )}
       {showFormatoEnTransito && (
         <FormatoReporteModal
-          titulo={`Pedidos en tránsito — ${tipoPedido === "POLLO" ? "Pollo" : "Insumos"}`}
+          titulo={tipoPedido === "POLLO" ? "Pedidos en tránsito — Pollo" : "Pedidos en tránsito"}
           cargando={cargandoEnTransito}
           error={errorEnTransito}
+          mostrarCategoria={tipoPedido === "INSUMOS"}
           onElegir={handleGenerarReporteEnTransito}
           onClose={() => setShowFormatoEnTransito(false)}
         />
@@ -603,6 +626,11 @@ export function PedidosLecturaBase({ tipoPedido, nivelPermiso, titulo, subtitulo
       {showReporteModal && reporteUrl && (
         <QrPreviewModal url={reporteUrl} onClose={handleCerrarReporteModal} titulo={reporteTitulo} />
       )}
+      <CancelarPedidoModal
+        pedido={pedidoCancelacion}
+        onClose={() => setPedidoCancelacion(null)}
+        onCancelado={handleBuscar}
+      />
     </div>
   );
 }

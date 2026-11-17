@@ -24,13 +24,24 @@ export interface PedidoCambioFecha {
   nombre_tienda: string | null;
   fecha_requerida: string;
   estado: string;
-  // "Insumos" / "Activo Fijo" en la vista de insumos; vacío en pollo.
+  // "Insumos" / "Activo Fijo" / "Verduras" en la vista de insumos; vacío en pollo.
   etiqueta?: string;
+  // Verduras: solo se entregan jueves o viernes (el backend también lo valida).
+  soloJuevesViernes?: boolean;
 }
 
 function fechaDdMmAaaa(fechaIso: string) {
   const [anio, mes, dia] = String(fechaIso || "").split("-");
   return anio && mes && dia ? `${dia}/${mes}/${anio}` : fechaIso;
+}
+
+// true si la fecha (yyyy-MM-dd) cae jueves o viernes. Se arma en UTC para
+// que la zona horaria del navegador no corra el día.
+export function esJuevesOViernes(fechaIso: string) {
+  const [anio, mes, dia] = String(fechaIso || "").split("-").map(Number);
+  if (!anio || !mes || !dia) return false;
+  const diaSemana = new Date(Date.UTC(anio, mes - 1, dia)).getUTCDay();
+  return diaSemana === 4 || diaSemana === 5;
 }
 
 // Botón pequeño para el panel de cada pedido.
@@ -72,7 +83,8 @@ export function CambiarFechaPedidoModal({ pedido, onClose, onActualizado }: Camb
   if (!pedido) return null;
 
   const hoy = format(new Date(), "yyyy-MM-dd");
-  const fechaValida = !!nuevaFecha && nuevaFecha >= hoy && nuevaFecha !== pedido.fecha_requerida;
+  const diaNoPermitido = !!pedido.soloJuevesViernes && !!nuevaFecha && !esJuevesOViernes(nuevaFecha);
+  const fechaValida = !!nuevaFecha && nuevaFecha >= hoy && nuevaFecha !== pedido.fecha_requerida && !diaNoPermitido;
 
   const handleGuardar = async () => {
     if (!fechaValida) return;
@@ -150,6 +162,11 @@ export function CambiarFechaPedidoModal({ pedido, onClose, onActualizado }: Camb
                 />
                 {nuevaFecha && nuevaFecha === pedido.fecha_requerida && (
                   <p className="text-xs text-gray-500 mt-1">Es la misma fecha que ya tiene el pedido.</p>
+                )}
+                {pedido.soloJuevesViernes && (
+                  <p className={`text-xs mt-1 ${diaNoPermitido ? "text-red-600" : "text-gray-500"}`}>
+                    Los pedidos de verduras solo se entregan jueves o viernes.
+                  </p>
                 )}
               </div>
               {pedido.estado === "VALIDADO" && (
