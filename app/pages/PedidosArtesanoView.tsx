@@ -237,6 +237,22 @@ function CompletarPagoModal({
   );
 }
 
+// Unidades de SAP por unidad del pedido (lasaña: paquete de 4). Se consulta una sola vez y se guarda en memoria.
+let unidadesSapPromesa: Promise<Map<string, number>> | null = null;
+
+function cargarUnidadesSap(): Promise<Map<string, number>> {
+  if (!unidadesSapPromesa) {
+    unidadesSapPromesa = getProductosArtesano()
+      .then((lista) => new Map(lista.map((p) => [p.codigo_producto, p.unidades_sap ?? 1])))
+      .catch(() => {
+        unidadesSapPromesa = null;
+        return new Map<string, number>();
+      });
+  }
+
+  return unidadesSapPromesa;
+}
+
 function TarjetaArtesano({
   pedido,
   onEditar,
@@ -248,6 +264,12 @@ function TarjetaArtesano({
   puedeCompletarPago?: boolean;
   onCambio?: () => void;
 }) {
+  const [unidadesSap, setUnidadesSap] = useState<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    cargarUnidadesSap().then(setUnidadesSap);
+  }, []);
+
   const [abierta, setAbierta] = useState(false);
   const [completandoPago, setCompletandoPago] = useState(false);
   const [cancelando, setCancelando] = useState(false);
@@ -363,7 +385,7 @@ function TarjetaArtesano({
                       <div className="min-w-0">
                         <p className="text-sm text-gray-800">{item.descripcion_producto}</p>
                         <p className="text-xs text-gray-400">
-                          {item.codigo_producto} · {item.unidad_medida}
+                          {item.codigo_producto} · {(unidadesSap.get(item.codigo_producto) ?? 1) > 1 ? `paquete de ${unidadesSap.get(item.codigo_producto)}` : item.unidad_medida}
                         </p>
                       </div>
                     </div>
@@ -1075,7 +1097,8 @@ function NuevoPedido({
             const producto = productos.find((p) => p.codigo_producto === linea.codigo_producto);
             const cantidad = Math.max(0, Number(linea.cantidad) || 0);
             // Unidad en que se pide; el pollo (el que viene en caja) indica además sus libras (3 o 3.5).
-            const unidad = (producto?.unidad_medida ?? "").toLowerCase();
+            const paquete = (producto?.unidades_sap ?? 1) > 1;
+            const unidad = paquete ? `paquete de ${producto?.unidades_sap}` : (producto?.unidad_medida ?? "").toLowerCase();
             const libras = producto?.factor_caja && producto.factor_libras ? ` · ${producto.factor_libras} lbs` : "";
 
             return (

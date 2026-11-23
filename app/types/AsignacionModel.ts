@@ -10,6 +10,9 @@ export interface LineaAsignacionFifo {
   cantidad_solicitada: number;
   cantidad_asignada: number;
   ajustado_manual: boolean;
+  // Clientes de pollo artesano: unidades de SAP por unidad del pedido y marca de origen. Las tiendas no lo traen (factor 1).
+  factor?: number;
+  origen?: "TIENDA" | "CLIENTE";
 }
 
 export interface GrupoArticuloFifo {

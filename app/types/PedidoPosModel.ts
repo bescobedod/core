@@ -9,6 +9,8 @@ export interface PedidoPosItem {
   cantidad_solicitada: string;
   cantidad_asignada: string;
   estado_linea: string;
+  // Solo clientes de pollo artesano: unidades de SAP (bolsas) por unidad del pedido (lasaña: 4). Las tiendas no lo traen.
+  unidades_sap?: number;
 }
 
 export interface PedidoPosTienda {
@@ -26,6 +28,13 @@ export interface PedidoPosTienda {
   sap_docnum: number | null;
   sap_error: string | null;
   items: PedidoPosItem[];
+  // Pollo: las tiendas no traen estos campos (se toman como TIENDA); los pedidos de clientes externos de pollo artesano sí.
+  origen?: "TIENDA" | "CLIENTE";
+  // Estado propio del pedido de cliente (CREADO, VALIDADO...); `estado` ya viene traducido al de las tiendas.
+  estado_origen?: string;
+  nombre_tienda_referencia?: string | null;
+  direccion_entrega?: string | null;
+  sin_stock?: boolean;
 }
 
 export interface PedidoPosRuta {

@@ -28,14 +28,24 @@ import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { motion, AnimatePresence } from "motion/react";
-import { getPedidosPos, getComparativoStockPollo, enviarTransferenciaPollo, previsualizarTicketPollo, firmarTicketPollo, previsualizarResumenRutaPollo, previsualizarQrsRutaPollo, previsualizarReporteDetallePollo, previsualizarReporteEnTransitoPollo, descargarExcelReporteDetallePollo, descargarExcelReporteEnTransitoPollo, FormatoReporte } from "../api/PedidoPosApi";
+import { previsualizarTicketPollo, firmarTicketPollo, previsualizarResumenRutaPollo, previsualizarQrsRutaPollo, previsualizarReporteDetallePollo, previsualizarReporteEnTransitoPollo, descargarExcelReporteDetallePollo, descargarExcelReporteEnTransitoPollo, FormatoReporte } from "../api/PedidoPosApi";
 import { ReporteParametrosModal, FormatoReporteModal, ParametrosReporte } from "./ReporteParametrosModal";
 import { CambiarFechaPedidoModal, BotonCambiarFecha, PedidoCambioFecha } from "./CambiarFechaPedidoModal";
-import { guardarAsignacionCantidades } from "../api/AsignacionApi";
+import {
+  getPedidosPolloIntegrado,
+  getComparativoIntegrado,
+  guardarAsignacionIntegrada,
+  enviarPolloIntegrado,
+  trasladarPilotoIntegrado,
+  esCliente,
+  clientePendiente,
+} from "../api/PedidosPolloIntegradoApi";
+import { getResumenRutasArtesano, previsualizarReporteDetalleArtesano, descargarExcelReporteDetalleArtesano } from "../api/PedidoArtesanoRutaApi";
+
 import { PedidoPosRuta, PedidoPosTienda } from "../types/PedidoPosModel";
 import { ComparativoStockItem } from "../types/StockModel";
 import { GrupoArticuloFifo } from "../types/AsignacionModel";
-import { getPilotos, getAsignacionesTransporte, asignarTransporte, trasladarPiloto } from "../api/TrasporteApi";
+import { getPilotos, getAsignacionesTransporte, asignarTransporte } from "../api/TrasporteApi";
 import { getAllCamiones } from "../api/CamionApi";
 import { PilotoUsuario, AsignacionTransporte } from "../types/TransporteModel";
 import { CamionModel } from "../types/CamionModel";
@@ -81,6 +91,7 @@ const ESTADO_PEDIDO_CFG: Record<string, { label: string; chip: string; icon: Rea
   VALIDADO:       { label: "Validado",       chip: "bg-amber-50 text-amber-700 border-amber-200", icon: <CheckCircle2 size={12} /> },
   EN_TRANSITO:    { label: "En tránsito",    chip: "bg-green-50 text-green-700 border-green-200", icon: <Truck size={12} /> },
   ERROR_ENVIO_SAP: { label: "Error al enviar", chip: "bg-red-50 text-red-700 border-red-200",       icon: <XCircle size={12} /> },
+  SIN_STOCK:      { label: "Sin stock",      chip: "bg-red-50 text-red-700 border-red-200",       icon: <XCircle size={12} /> },
   MIXTO:          { label: "Mixto",          chip: "bg-purple-50 text-purple-700 border-purple-200", icon: <AlertTriangle size={12} /> },
 };
 
@@ -177,6 +188,9 @@ export function calcularAsignacionFifo(ruta: PedidoPosRuta, comparativo: Compara
   const gruposMap = new Map<string, GrupoArticuloFifo>();
 
   for (const tienda of ruta.tiendas) {
+    // Los clientes que ya salieron o se entregaron no se vuelven a asignar.
+    if (esCliente(tienda) && !clientePendiente(tienda)) continue;
+
     for (const item of tienda.items) {
       if (!item.codigo_producto) continue;
 
@@ -204,6 +218,9 @@ export function calcularAsignacionFifo(ruta: PedidoPosRuta, comparativo: Compara
         cantidad_solicitada: Number(item.cantidad_solicitada),
         cantidad_asignada: 0,
         ajustado_manual: false,
+        origen: tienda.origen ?? "TIENDA",
+        // Unidades de SAP por unidad del pedido: solo los clientes lo traen (lasaña: 4); las tiendas son 1.
+        factor: item.unidades_sap ?? 1,
       });
     }
   }
@@ -219,9 +236,18 @@ export function calcularAsignacionFifo(ruta: PedidoPosRuta, comparativo: Compara
 
     let restante = grupo.stock_original;
     for (const linea of grupo.lineas) {
-      const asignar = Math.max(0, Math.min(linea.cantidad_solicitada, restante));
-      linea.cantidad_asignada = asignar;
-      restante -= asignar;
+      const factor = linea.factor ?? 1;
+
+      if (factor === 1) {
+        const asignar = Math.max(0, Math.min(linea.cantidad_solicitada, restante));
+        linea.cantidad_asignada = asignar;
+        restante -= asignar;
+      } else {
+        // El stock está en unidades de SAP: la línea se asigna en unidades enteras de su pedido.
+        const asignar = Math.max(0, Math.min(linea.cantidad_solicitada, Math.floor(restante / factor)));
+        linea.cantidad_asignada = asignar;
+        restante -= asignar * factor;
+      }
     }
   }
 
@@ -230,8 +256,8 @@ export function calcularAsignacionFifo(ruta: PedidoPosRuta, comparativo: Compara
 
 function estadoGrupoFifo(grupo: GrupoArticuloFifo): "ok" | "parcial" | "sin_stock" | "no_encontrado" {
   if (!grupo.encontrado_en_sap) return "no_encontrado";
-  const totalSolicitado = grupo.lineas.reduce((s, l) => s + l.cantidad_solicitada, 0);
-  const totalAsignado = grupo.lineas.reduce((s, l) => s + l.cantidad_asignada, 0);
+  const totalSolicitado = grupo.lineas.reduce((s, l) => s + l.cantidad_solicitada * (l.factor ?? 1), 0);
+  const totalAsignado = grupo.lineas.reduce((s, l) => s + l.cantidad_asignada * (l.factor ?? 1), 0);
   if (totalAsignado >= totalSolicitado) return "ok";
   if (totalAsignado > 0) return "parcial";
   return "sin_stock";
@@ -377,8 +403,29 @@ export function TransporteSection({ ruta, fecha, puedeEditar, camiones, pilotos,
   );
 }
 
+// "3 tiendas · 2 clientes". Sin clientes queda como siempre ("3 tiendas encontradas").
+function textoConteo(tiendas: PedidoPosTienda[], sufijo = ""): string {
+  const clientes = tiendas.filter(esCliente).length;
+  const nTiendas = tiendas.length - clientes;
+  const partes = [`${nTiendas} tienda${nTiendas !== 1 ? "s" : ""}`];
+
+  if (clientes > 0) partes.push(`${clientes} cliente${clientes !== 1 ? "s" : ""}`);
+
+  return sufijo ? `${partes.join(" · ")} ${sufijo}` : partes.join(" · ");
+}
+
+// Distintivo de los pedidos de clientes externos (pollo artesano) entre las tiendas.
+function EtiquetaCliente() {
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full border bg-violet-50 text-violet-700 border-violet-200 shrink-0">
+      <User size={10} /> Cliente
+    </span>
+  );
+}
+
 function StoreCard({ tienda, onCambiarFecha }: { tienda: PedidoPosTienda; onCambiarFecha?: (pedido: PedidoCambioFecha) => void }) {
   const [open, setOpen] = useState(false);
+  const cliente = esCliente(tienda);
 
   return (
     <div className="border border-gray-200 rounded-xl overflow-hidden">
@@ -386,11 +433,15 @@ function StoreCard({ tienda, onCambiarFecha }: { tienda: PedidoPosTienda; onCamb
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center gap-3 px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
       >
-        <span className="w-7 h-7 rounded-lg bg-white border border-gray-200 flex items-center justify-center shrink-0">
-          <Store size={14} className="text-gray-500" />
+        <span className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 ${cliente ? "bg-violet-50 border-violet-200" : "bg-white border-gray-200"}`}>
+          {cliente ? <User size={14} className="text-violet-600" /> : <Store size={14} className="text-gray-500" />}
         </span>
-        <span className="text-sm text-gray-700 flex-1 truncate">
-          {tienda.nombre_tienda || tienda.codigo_tienda || "Tienda sin identificar"}
+        <span className="text-sm text-gray-700 flex-1 min-w-0 flex items-center gap-2">
+          <span className="truncate">{tienda.nombre_tienda || tienda.codigo_tienda || "Tienda sin identificar"}</span>
+          {cliente && <EtiquetaCliente />}
+          {cliente && tienda.nombre_tienda_referencia && (
+            <span className="text-xs text-gray-400 truncate hidden sm:inline">Tienda ref.: {tienda.nombre_tienda_referencia}</span>
+          )}
         </span>
         <span className="text-xs text-gray-400 shrink-0">{tienda.numero_pedido}</span>
         <EstadoPedidoBadge estado={tienda.estado} />
@@ -406,7 +457,14 @@ function StoreCard({ tienda, onCambiarFecha }: { tienda: PedidoPosTienda; onCamb
             transition={{ duration: 0.2 }}
             className="overflow-hidden bg-white"
           >
-            {onCambiarFecha && (
+            {cliente && (
+              <div className="px-6 pt-3 text-xs text-gray-500 space-y-0.5">
+                <p>Tienda de referencia: <span className="font-medium text-gray-700">{tienda.nombre_tienda_referencia || "Sin tienda de referencia"}</span></p>
+                {tienda.direccion_entrega && <p>Dirección: <span className="font-medium text-gray-700">{tienda.direccion_entrega}</span></p>}
+                <p>Entrega: <span className="font-medium text-gray-700">{tienda.fecha_requerida?.split("-").reverse().join("/")}</span></p>
+              </div>
+            )}
+            {onCambiarFecha && !cliente && (
               <div className="flex items-center gap-2 px-6 pt-3 text-xs text-gray-500">
                 <span className="flex-1">
                   Entrega: <span className="font-medium text-gray-700">{tienda.fecha_requerida?.split("-").reverse().join("/")}</span>
@@ -568,7 +626,7 @@ export function AsignacionFifoModal({ grupos, fecha, guardando, error, onClose, 
 
         <div className="overflow-y-auto flex-1 px-6 py-3 space-y-4">
           {grupos.map(grupo => {
-            const totalAsignado = grupo.lineas.reduce((s, l) => s + l.cantidad_asignada, 0);
+            const totalAsignado = grupo.lineas.reduce((s, l) => s + l.cantidad_asignada * (l.factor ?? 1), 0);
             const stockRestante = grupo.stock_original - totalAsignado;
             const estado = estadoGrupoFifo(grupo);
             const cfg = ESTADO_STOCK_CFG[estado];
@@ -589,12 +647,20 @@ export function AsignacionFifoModal({ grupos, fecha, guardando, error, onClose, 
                 </div>
                 <div className="divide-y divide-gray-50">
                   {grupo.lineas.map(linea => {
-                    const maxPermitido = Math.min(linea.cantidad_solicitada, linea.cantidad_asignada + stockRestante);
+                    const factorLinea = linea.factor ?? 1;
+                    const disponibleLinea = factorLinea === 1 ? stockRestante : Math.floor(stockRestante / factorLinea);
+                    const maxPermitido = Math.min(linea.cantidad_solicitada, linea.cantidad_asignada + disponibleLinea);
                     return (
                       <div key={linea.detalle_id} className="px-4 py-2.5 flex flex-col sm:flex-row sm:items-center gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-700 truncate">{linea.nombre_tienda}</p>
-                          <p className="text-xs text-gray-400">{linea.numero_pedido} · {linea.fecha_pedido} {linea.hora_pedido}</p>
+                          <p className="text-sm text-gray-700 truncate flex items-center gap-1.5">
+                            <span className="truncate">{linea.nombre_tienda}</span>
+                            {linea.origen === "CLIENTE" && <EtiquetaCliente />}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {linea.numero_pedido} · {linea.fecha_pedido} {linea.hora_pedido}
+                            {factorLinea > 1 && <span> · 1 unidad = {factorLinea} en SAP</span>}
+                          </p>
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
                           <span className="text-xs text-gray-400">Solicitó <span className="text-gray-600 tabular-nums">{linea.cantidad_solicitada}</span></span>
@@ -636,7 +702,7 @@ export function AsignacionFifoModal({ grupos, fecha, guardando, error, onClose, 
   );
 }
 
-function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
+function PedidosPolloViewCompleta() {
   const todayStr = format(new Date(), "yyyy-MM-dd");
   const defaultDate = format(addDays(new Date(), 1), "yyyy-MM-dd");
 
@@ -658,6 +724,10 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
   const [loadingBusqueda, setLoadingBusqueda] = useState(false);
   const [errorBusqueda, setErrorBusqueda] = useState<string | null>(null);
   const [previewRuta, setPreviewRuta] = useState<PedidoPosRuta | null>(null);
+  // Aviso si no se pudieron cargar los pedidos de clientes (las tiendas se muestran igual).
+  const [avisoClientes, setAvisoClientes] = useState<string | null>(null);
+  // Clientes externos con pedido por ruta en la fecha elegida, para el selector de ruta.
+  const [clientesPorRuta, setClientesPorRuta] = useState<Map<string, number>>(new Map());
 
   const [rutaActual, setRutaActual] = useState<RutaPollo | null>(null);
   const [pedidoRuta, setPedidoRuta] = useState<PedidoPosRuta | null>(null);
@@ -736,12 +806,15 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
     setTrasladoError(null);
 
     try {
-      await trasladarPiloto({
-        ruta_id: rutaElegidaId,
-        fecha: fechaElegida,
-        camion_id: trasladoCamionId,
-        piloto_id: Number(trasladoPilotoId),
-      });
+      await trasladarPilotoIntegrado(
+        {
+          ruta_id: rutaElegidaId,
+          fecha: fechaElegida,
+          camion_id: trasladoCamionId,
+          piloto_id: Number(trasladoPilotoId),
+        },
+        previewRuta
+      );
 
       setTrasladoAbierto(false);
       setTrasladoPilotoId("");
@@ -798,14 +871,12 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
       setErrorPedidos(null);
 
       try {
-        const [data, asignaciones] = await Promise.all([
-          getPedidosPos("POLLO", {
-            ruta_id: candado.ruta_id,
-            fecha_requerida: candado.fecha,
-          }),
+        const [integrado, asignaciones] = await Promise.all([
+          getPedidosPolloIntegrado(candado.ruta_id, candado.fecha),
           getAsignacionesTransporte(candado.fecha),
         ]);
-        setPedidoRuta(data.rutas[0] || null);
+        setPedidoRuta(integrado.ruta);
+        setAvisoClientes(integrado.avisoClientes);
         setAsignacionesDelDia(asignaciones);
       } catch (err) {
         setErrorPedidos(err instanceof Error ? err.message : "Error al obtener los pedidos de la ruta");
@@ -814,6 +885,25 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
       }
     })();
   }, [candado, rutasDisponibles]);
+
+  // Cuántos clientes externos tiene cada ruta en la fecha elegida, para mostrarlo en el selector de ruta.
+  useEffect(() => {
+    if (candado || !fechaElegida) return;
+
+    let vigente = true;
+
+    getResumenRutasArtesano(fechaElegida)
+      .then((rutas) => {
+        if (vigente) setClientesPorRuta(new Map(rutas.filter((r) => r.total > 0).map((r) => [r.ruta_id, r.total])));
+      })
+      .catch(() => {
+        if (vigente) setClientesPorRuta(new Map());
+      });
+
+    return () => {
+      vigente = false;
+    };
+  }, [candado, fechaElegida]);
 
   // Si cambia la ruta o la fecha elegida, invalida la búsqueda previa
   useEffect(() => {
@@ -830,11 +920,9 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
     setPreviewRuta(null);
 
     try {
-      const data = await getPedidosPos("POLLO", {
-        ruta_id: rutaElegidaId,
-        fecha_requerida: fechaElegida,
-      });
-      setPreviewRuta(data.rutas[0] || null);
+      const integrado = await getPedidosPolloIntegrado(rutaElegidaId, fechaElegida);
+      setPreviewRuta(integrado.ruta);
+      setAvisoClientes(integrado.avisoClientes);
       setBusquedaRealizada(true);
     } catch (err) {
       setErrorBusqueda(err instanceof Error ? err.message : "Error al buscar pedidos");
@@ -848,8 +936,9 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
   const handleRecargarTrasCambioFecha = async () => {
     if (candado) {
       try {
-        const data = await getPedidosPos("POLLO", { ruta_id: candado.ruta_id, fecha_requerida: candado.fecha });
-        setPedidoRuta(data.rutas[0] || null);
+        const integrado = await getPedidosPolloIntegrado(candado.ruta_id, candado.fecha);
+        setPedidoRuta(integrado.ruta);
+        setAvisoClientes(integrado.avisoClientes);
       } catch (err) {
         setErrorPedidos(err instanceof Error ? err.message : "Error al obtener los pedidos de la ruta");
       }
@@ -908,8 +997,7 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
     setStockError(null);
 
     try {
-      const data = await getComparativoStockPollo(candado.fecha, candado.ruta_id);
-      setStockComparativo(data.comparativo);
+      setStockComparativo(await getComparativoIntegrado(candado.fecha, candado.ruta_id, pedidoRuta));
       setAsignacionFifo(null);
       setShowStockModal(true);
     } catch (err) {
@@ -957,12 +1045,13 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
         }))
       );
 
-      await guardarAsignacionCantidades({ fecha: candado.fecha, asignaciones });
+      if (pedidoRuta) await guardarAsignacionIntegrada(candado.ruta_id, candado.fecha, pedidoRuta, asignaciones);
 
       setShowFifoModal(false);
 
-      const data = await getPedidosPos("POLLO", { ruta_id: candado.ruta_id, fecha_requerida: candado.fecha });
-      setPedidoRuta(data.rutas[0] || null);
+      const integrado = await getPedidosPolloIntegrado(candado.ruta_id, candado.fecha);
+      setPedidoRuta(integrado.ruta);
+      setAvisoClientes(integrado.avisoClientes);
     } catch (err) {
       setErrorGuardarAsignacion(err instanceof Error ? err.message : "Error al guardar la asignación");
     } finally {
@@ -978,11 +1067,15 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
     setErrorEnviarSap(null);
 
     try {
-      const resultado = await enviarTransferenciaPollo(candado.ruta_id, candado.fecha);
+      const resultado = await enviarPolloIntegrado(candado.ruta_id, candado.fecha, pedidoRuta);
 
       // Éxito: SAP liberó el candado del lado del backend, así que
       // volvemos a la pantalla de selección
-      alert(`Transferencia enviada. Documento SAP #${resultado.sap_docnum}`);
+      const documentos = [
+        resultado.docTiendas !== null && `tiendas SAP #${resultado.docTiendas}`,
+        resultado.docClientes !== null && `clientes SAP #${resultado.docClientes}`,
+      ].filter(Boolean);
+      alert(`Transferencia enviada. Documento${documentos.length > 1 ? "s" : ""}: ${documentos.join(" · ")}`);
       setCandado(null);
       setRutaActual(null);
       setPedidoRuta(null);
@@ -996,6 +1089,15 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
       }
     } catch (err) {
       setErrorEnviarSap(err instanceof Error ? err.message : "Error al enviar la transferencia");
+
+      // Si parte ya salió, se refresca para ver en qué quedó cada pedido.
+      try {
+        const integrado = await getPedidosPolloIntegrado(candado.ruta_id, candado.fecha);
+        setPedidoRuta(integrado.ruta);
+        setAvisoClientes(integrado.avisoClientes);
+      } catch {
+        // El error del envío ya se muestra; la lista se actualiza al recargar.
+      }
     } finally {
       setEnviandoSap(false);
     }
@@ -1051,7 +1153,7 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
     setErrorResumenRuta(null);
 
     try {
-      const url = await previsualizarResumenRutaPollo(rutaId, fecha);
+      const url = await previsualizarResumenRutaPollo(rutaId, fecha, true);
       setResumenRutaUrl(url);
       setShowResumenRutaModal(true);
     } catch (err) {
@@ -1102,21 +1204,40 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
       // Con "Búsqueda avanzada" la fecha (o el rango) y los productos vienen
       // del modal; sin ella se usa la fecha elegida en la vista, como siempre.
       const fechaReporte = parametros.fechaDesde ?? fechaElegida;
-      const opciones = {
-        division: parametros.division,
-        muelles: parametros.muelles,
-        fechaHasta: parametros.fechaHasta,
-        productos: parametros.productos,
-      };
       const esRango = !!parametros.fechaHasta && parametros.fechaHasta > fechaReporte;
+      const incluirTiendas = parametros.incluirTiendas ?? true;
+      const incluirClientes = parametros.incluirClientes ?? false;
 
-      if (parametros.formato === "excel") {
-        await descargarExcelReporteDetallePollo(fechaReporte, opciones);
+      if (!incluirTiendas && incluirClientes) {
+        // Solo clientes externos: el reporte de pollo artesano.
+        const opcionesClientes = { fechaHasta: parametros.fechaHasta, productos: parametros.productos, muelles: parametros.muelles };
+
+        if (parametros.formato === "excel") {
+          await descargarExcelReporteDetalleArtesano(fechaReporte, opcionesClientes);
+        } else {
+          const url = await previsualizarReporteDetalleArtesano(fechaReporte, opcionesClientes);
+          setReporteTitulo(esRango ? "Detalle de Pedidos de Clientes por Rango de Fechas" : "Detalle de Pedidos de Clientes");
+          setReporteUrl(url);
+          setShowReporteModal(true);
+        }
       } else {
-        const url = await previsualizarReporteDetallePollo(fechaReporte, opciones);
-        setReporteTitulo(esRango ? "Detalle de Pedidos por Rango de Fechas" : "Detalle de Pedidos por Tienda");
-        setReporteUrl(url);
-        setShowReporteModal(true);
+        // Tiendas, o tiendas y clientes juntos (incluirClientes) con el formato de siempre.
+        const opciones = {
+          division: parametros.division,
+          muelles: parametros.muelles,
+          fechaHasta: parametros.fechaHasta,
+          productos: parametros.productos,
+          incluirClientes,
+        };
+
+        if (parametros.formato === "excel") {
+          await descargarExcelReporteDetallePollo(fechaReporte, opciones);
+        } else {
+          const url = await previsualizarReporteDetallePollo(fechaReporte, opciones);
+          setReporteTitulo(esRango ? "Detalle de Pedidos por Rango de Fechas" : incluirClientes ? "Detalle de Pedidos por Tienda y Cliente" : "Detalle de Pedidos por Tienda");
+          setReporteUrl(url);
+          setShowReporteModal(true);
+        }
       }
 
       setShowParametrosReporte(false);
@@ -1135,9 +1256,9 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
 
     try {
       if (formato === "excel") {
-        await descargarExcelReporteEnTransitoPollo();
+        await descargarExcelReporteEnTransitoPollo(undefined, true);
       } else {
-        const url = await previsualizarReporteEnTransitoPollo();
+        const url = await previsualizarReporteEnTransitoPollo(undefined, true);
         setReporteTitulo("Pedidos en Tránsito — Pollo");
         setReporteUrl(url);
         setShowReporteModal(true);
@@ -1223,7 +1344,12 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
         </div>
       </div>
 
-      {selector}
+      {avisoClientes && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 mb-4 flex items-start gap-2">
+          <AlertTriangle size={15} className="text-amber-600 shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-800">{avisoClientes}</p>
+        </div>
+      )}
 
       {!candado ? (
         // ------------------------------------------------------------
@@ -1245,7 +1371,9 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
               >
                 <option value="">Seleccionar ruta…</option>
                 {rutasDisponibles.map(r => (
-                  <option key={r.id} value={r.id}>{r.nombre_ruta} ({r.total_tiendas} tiendas)</option>
+                  <option key={r.id} value={r.id}>
+                    {r.nombre_ruta} ({r.total_tiendas} tiendas{clientesPorRuta.get(r.id) ? ` · ${clientesPorRuta.get(r.id)} cliente${clientesPorRuta.get(r.id) !== 1 ? "s" : ""}` : ""})
+                  </option>
                 ))}
               </select>
             </div>
@@ -1298,7 +1426,7 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
           {previewRuta && previewRuta.tiendas.length > 0 && (
             <div className="mb-4">
               <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <p className="text-xs text-gray-400">{previewRuta.tiendas.length} tienda{previewRuta.tiendas.length !== 1 ? "s" : ""} encontradas</p>
+                <p className="text-xs text-gray-400">{textoConteo(previewRuta.tiendas, "encontradas")}</p>
                 <EstadoPedidoBadge estado={previewRuta.estado_general} />
                 {previewRuta.sap_docnum && (
                   <span className="text-xs text-gray-400">Doc. SAP: <span className="text-gray-600 font-medium">{previewRuta.sap_docnum}</span></span>
@@ -1313,6 +1441,7 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
               {ESTADOS_CON_QR.includes(previewRuta.estado_general) && (
                 <div className="mb-3">
                   <div className="flex items-center gap-2">
+                    {previewRuta.tiendas.some(t => !esCliente(t)) && (
                     <Button
                       onClick={() => handlePrevisualizarTicket(rutaElegidaId, fechaElegida, previewRuta.estado_general === "EN_TRANSITO")}
                       disabled={cargandoTicket}
@@ -1322,6 +1451,7 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
                       {cargandoTicket ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <FileText size={14} className="mr-1.5" />}
                       Ver ticket
                     </Button>
+                    )}
                     {previewRuta.estado_general === "EN_TRANSITO" && (
                       <Button
                         onClick={() => { setTrasladoAbierto(v => !v); setTrasladoError(null); }}
@@ -1391,7 +1521,7 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
                   )}
                 </div>
               )}
-              {ESTADOS_CON_QR.includes(previewRuta.estado_general) && (
+              {ESTADOS_CON_QR.includes(previewRuta.estado_general) && previewRuta.tiendas.some(t => !esCliente(t)) && (
                 <div className="mb-3">
                   <Button
                     onClick={() => handlePrevisualizarQr(rutaElegidaId, fechaElegida)}
@@ -1561,7 +1691,7 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
                       Resumen de ruta
                     </Button>
                   )}
-                  {pedidoRuta && ESTADOS_CON_QR.includes(pedidoRuta.estado_general) && (
+                  {pedidoRuta && ESTADOS_CON_QR.includes(pedidoRuta.estado_general) && pedidoRuta.tiendas.some(t => !esCliente(t)) && (
                     <Button
                       onClick={() => handlePrevisualizarQr(candado?.ruta_id || rutaElegidaId, candado?.fecha || fechaElegida)}
                       disabled={cargandoQr}
@@ -1594,7 +1724,7 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
               )}
 
               <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
-                <p className="text-xs text-gray-400 mb-3">{pedidoRuta.tiendas.length} tienda{pedidoRuta.tiendas.length !== 1 ? "s" : ""}</p>
+                <p className="text-xs text-gray-400 mb-3">{textoConteo(pedidoRuta.tiendas)}</p>
                 <div className="space-y-2.5">
                   {pedidoRuta.tiendas.map(tienda => (
                     <StoreCard key={tienda.pedido_id} tienda={tienda} onCambiarFecha={setPedidoCambioFecha} />
@@ -1653,6 +1783,7 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
           tipoPedido="POLLO"
           fecha={fechaElegida}
           mostrarDivision
+          mostrarTipos
           cargando={cargandoReporte}
           error={errorReporte}
           onGenerar={handleGenerarReporte}
@@ -1682,7 +1813,7 @@ function PedidosPolloViewCompleta({ selector }: { selector?: ReactNode }) {
 // (candados, transporte, stock, envío a SAP) o la pantalla de solo lectura.
 // Por defecto (sin fila en tbl_menu_rol, o si falla la consulta) se asume
 // 'escritura' — el comportamiento de siempre no cambia para nadie.
-export function PedidosPolloView({ selector }: { selector?: ReactNode } = {}) {
+export function PedidosPolloView() {
   const [nivelPermiso, setNivelPermiso] = useState<NivelPermisoMenu>("escritura");
   const [cargandoPermiso, setCargandoPermiso] = useState(true);
 
@@ -1708,5 +1839,5 @@ export function PedidosPolloView({ selector }: { selector?: ReactNode } = {}) {
     return <PedidosPolloLecturaView nivelPermiso={nivelPermiso} />;
   }
 
-  return <PedidosPolloViewCompleta selector={selector} />;
+  return <PedidosPolloViewCompleta />;
 }

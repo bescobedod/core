@@ -7,6 +7,10 @@ export interface ClienteRutaArtesano extends PedidoPosTienda {
   serie: string;
   direccion_entrega: string | null;
   condicion_pago: string;
+  cliente_nombre: string;
+  telefono_contacto: string | null;
+  // Validado sin stock: sigue creado, con todo en cero.
+  sin_stock: boolean;
 }
 
 export interface RutaArtesano extends Omit<PedidoPosRuta, "tiendas"> {
@@ -74,14 +78,27 @@ export interface EnviarRutaArtesanoResponse {
   pedidos_sin_validar: number;
 }
 
-export async function enviarRutaArtesano(rutaId: string, fecha: string): Promise<EnviarRutaArtesanoResponse> {
+// liberarCandado: false cuando la ruta también lleva tiendas; el envío de las tiendas es el que libera el candado.
+export async function enviarRutaArtesano(rutaId: string, fecha: string, liberarCandado = true): Promise<EnviarRutaArtesanoResponse> {
   return leer(
     await authFetch("/pedidoArtesano/enviarRuta", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ruta_id: rutaId, fecha }),
+      body: JSON.stringify({ ruta_id: rutaId, fecha, liberar_candado: liberarCandado }),
     }),
     "Error al enviar la ruta"
+  );
+}
+
+// Copia el piloto de la ruta (tras trasladar el envío) a los pedidos de clientes en tránsito. soloValidar solo revisa que se pueda.
+export async function sincronizarPilotoRutaArtesano(rutaId: string, fecha: string, soloValidar = false): Promise<void> {
+  await leer(
+    await authFetch("/pedidoArtesano/sincronizarPilotoRuta", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ruta_id: rutaId, fecha, solo_validar: soloValidar }),
+    }),
+    "Error al actualizar el piloto de los clientes"
   );
 }
 
@@ -110,6 +127,8 @@ export interface OpcionesReporteArtesano {
   estados?: string[];
   rutas?: string[];
   productos?: string[];
+  // Muelles (RAS-002...): solo las rutas que salen de ellos.
+  muelles?: string[];
 }
 
 function paramsReporteDetalle(fecha: string, opciones: OpcionesReporteArtesano, formato: FormatoReporteArtesano): URLSearchParams {
@@ -119,6 +138,7 @@ function paramsReporteDetalle(fecha: string, opciones: OpcionesReporteArtesano, 
   if (opciones.estados && opciones.estados.length > 0) params.set("estados", opciones.estados.join(","));
   if (opciones.rutas && opciones.rutas.length > 0) params.set("rutas", opciones.rutas.join(","));
   if (opciones.productos && opciones.productos.length > 0) params.set("productos", opciones.productos.join(","));
+  if (opciones.muelles && opciones.muelles.length > 0) params.set("muelles", opciones.muelles.join(","));
 
   return params;
 }
@@ -157,16 +177,4 @@ export async function descargarExcelReporteDetalleArtesano(fecha: string, opcion
   const sufijo = opciones.fechaHasta && opciones.fechaHasta > fecha ? `_a_${opciones.fechaHasta}` : "";
 
   guardarArchivo(blob, `pollo_artesano_detalle_${fecha}${sufijo}.xlsx`);
-}
-
-export async function previsualizarReporteEnTransitoArtesano(): Promise<string> {
-  const blob = await pedirReporte("/pedidoArtesano/generarReporteEnTransito", new URLSearchParams({ formato: "pdf" }), "Error al generar el reporte de pedidos en tránsito");
-
-  return window.URL.createObjectURL(blob);
-}
-
-export async function descargarExcelReporteEnTransitoArtesano(): Promise<void> {
-  const blob = await pedirReporte("/pedidoArtesano/generarReporteEnTransito", new URLSearchParams({ formato: "excel" }), "Error al generar el Excel");
-
-  guardarArchivo(blob, "pollo_artesano_en_transito.xlsx");
 }

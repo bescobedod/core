@@ -31,6 +31,9 @@ export interface ParametrosReporte {
   fechaDesde?: string;
   fechaHasta?: string;
   productos?: string[];
+  // Solo con mostrarTipos (Pedidos de Pollo): qué pedidos entran al reporte. Por defecto, los dos.
+  incluirTiendas?: boolean;
+  incluirClientes?: boolean;
 }
 
 const MAX_DIAS_RANGO = 31;
@@ -48,6 +51,8 @@ interface ReporteParametrosModalProps {
   tipoPedido: "POLLO" | "INSUMOS";
   fecha: string;
   mostrarDivision: boolean;
+  // Pollo con clientes externos: permite elegir pedidos de tiendas, de clientes o ambos.
+  mostrarTipos?: boolean;
   cargando: boolean;
   error: string | null;
   onGenerar: (parametros: ParametrosReporte) => void;
@@ -61,6 +66,7 @@ export function ReporteParametrosModal({
   tipoPedido,
   fecha,
   mostrarDivision,
+  mostrarTipos = false,
   cargando,
   error,
   onGenerar,
@@ -70,6 +76,8 @@ export function ReporteParametrosModal({
   const [muellesSeleccionados, setMuellesSeleccionados] = useState<string[]>([]);
   const [division, setDivision] = useState<DivisionReporte>("1,2");
   const [formato, setFormato] = useState<FormatoReporte>("pdf");
+  const [incluirTiendas, setIncluirTiendas] = useState(true);
+  const [incluirClientes, setIncluirClientes] = useState(true);
 
   // Búsqueda avanzada: un día o un rango de fechas, y productos.
   const [avanzada, setAvanzada] = useState(false);
@@ -86,6 +94,9 @@ export function ReporteParametrosModal({
 
   const mostrarMuelles = tipoPedido === "POLLO";
   const sinMuelleElegido = mostrarMuelles && !todosLosMuelles && muellesSeleccionados.length === 0;
+  const sinTipoElegido = mostrarTipos && !incluirTiendas && !incluirClientes;
+  // La división es de las tiendas: sin pedidos de tiendas no aplica.
+  const mostrarDivisionAhora = mostrarDivision && (!mostrarTipos || incluirTiendas);
 
   // Los productos se cargan la primera vez que se activa la búsqueda avanzada.
   useEffect(() => {
@@ -94,7 +105,7 @@ export function ReporteParametrosModal({
     setCargandoProductos(true);
     setErrorProductos(null);
 
-    getProductosReporte(tipoPedido)
+    getProductosReporte(tipoPedido, mostrarTipos)
       .then(setProductos)
       .catch((err) => setErrorProductos(err instanceof Error ? err.message : "Error al obtener los productos"))
       .finally(() => setCargandoProductos(false));
@@ -139,9 +150,10 @@ export function ReporteParametrosModal({
 
   const handleGenerar = () => {
     const base: ParametrosReporte = {
-      division: mostrarDivision ? division : undefined,
+      division: mostrarDivisionAhora ? division : undefined,
       muelles: mostrarMuelles && !todosLosMuelles ? muellesSeleccionados : [],
       formato,
+      ...(mostrarTipos ? { incluirTiendas, incluirClientes } : {}),
     };
 
     if (!avanzada) {
@@ -173,6 +185,26 @@ export function ReporteParametrosModal({
         </div>
 
         <div className="px-6 py-5 space-y-5 overflow-y-auto min-h-0">
+          {mostrarTipos && (
+            <div>
+              <p className="text-sm font-medium text-gray-800 mb-2">Tipo de pedido</p>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer w-fit">
+                  <input type="checkbox" checked={incluirTiendas} onChange={(e) => setIncluirTiendas(e.target.checked)} className="h-4 w-4 accent-[#2183AE]" />
+                  Pedidos de tiendas
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer w-fit">
+                  <input type="checkbox" checked={incluirClientes} onChange={(e) => setIncluirClientes(e.target.checked)} className="h-4 w-4 accent-[#2183AE]" />
+                  Pedidos de clientes externos
+                </label>
+              </div>
+              {sinTipoElegido && <p className="text-xs text-amber-600 mt-2">Selecciona al menos un tipo de pedido.</p>}
+              {incluirClientes && incluirTiendas && mostrarDivision && division !== "1,2" && (
+                <p className="text-[11px] text-gray-400 mt-2">Los clientes externos no tienen división: salen cuando la división es &quot;Ambas&quot;.</p>
+              )}
+            </div>
+          )}
+
           {mostrarMuelles && (
             <div>
               <p className="text-sm font-medium text-gray-800 mb-2">Muelles</p>
@@ -210,7 +242,7 @@ export function ReporteParametrosModal({
             </div>
           )}
 
-          {mostrarDivision && (
+          {mostrarDivisionAhora && (
             <div>
               <p className="text-sm font-medium text-gray-800 mb-2">División</p>
               <div className="flex border border-gray-300 rounded-lg overflow-hidden w-fit">
@@ -388,7 +420,7 @@ export function ReporteParametrosModal({
           </Button>
           <Button
             onClick={handleGenerar}
-            disabled={cargando || sinMuelleElegido || sinProductoElegido || errorFechas !== null}
+            disabled={cargando || sinMuelleElegido || sinProductoElegido || sinTipoElegido || errorFechas !== null}
             variant="submit"
             size="sm"
           >

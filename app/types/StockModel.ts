@@ -6,6 +6,9 @@ export interface ComparativoStockItem {
   stock_disponible: number;
   encontrado_en_sap: boolean;
   diferencia: number;
+  // Solo en el comparativo de clientes de pollo artesano.
+  unidades_sap?: number;
+  stock_bolsas?: number;
 }
 
 export interface ComparativoStockPolloResponse {

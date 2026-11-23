@@ -288,8 +288,10 @@ export async function previsualizarResumenRutaInsumos(rutaId: string, fecha: str
     return window.URL.createObjectURL(blob);
 }
 
-export async function previsualizarResumenRutaPollo(rutaId: string, fecha: string): Promise<string> {
+// incluirClientes: suma las columnas de los clientes externos de pollo artesano de la misma ruta.
+export async function previsualizarResumenRutaPollo(rutaId: string, fecha: string, incluirClientes = false): Promise<string> {
     const params = new URLSearchParams({ ruta_id: rutaId, fecha });
+    if (incluirClientes) params.set('incluir_clientes', '1');
     const response = await authFetch(`/pedido/generarResumenRutaPollo?${params.toString()}`);
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -336,6 +338,8 @@ export interface OpcionesReporteDetalle {
     // vacío/omitido = todos.
     fechaHasta?: string;
     productos?: string[];
+    // Pollo: incluye los pedidos de clientes externos (pollo artesano) junto a los de tienda.
+    incluirClientes?: boolean;
 }
 
 export interface ProductoReporte {
@@ -346,8 +350,9 @@ export interface ProductoReporte {
 
 // Productos que han aparecido en pedidos de ese tipo (INSUMOS incluye Activo
 // Fijo), para elegir cuáles incluir en la búsqueda avanzada del reporte.
-export async function getProductosReporte(tipoPedido: 'POLLO' | 'INSUMOS'): Promise<ProductoReporte[]> {
+export async function getProductosReporte(tipoPedido: 'POLLO' | 'INSUMOS', incluirClientes = false): Promise<ProductoReporte[]> {
     const params = new URLSearchParams({ tipo_pedido: tipoPedido });
+    if (incluirClientes) params.set('incluir_clientes', '1');
     const response = await authFetch(`/pedido/getProductosReporte?${params.toString()}`);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -381,9 +386,10 @@ export async function previsualizarReporteDetalleInsumos(fecha: string, opciones
 // Pedidos EN_TRANSITO (aún sin entregar) de cualquier fecha, por división.
 // Sin `division` trae las dos divisiones, cada una en su sección; con una
 // sola (usuarios lectura_division) solo esa.
-async function descargarReporteEnTransito(ruta: string, division?: '1' | '2'): Promise<string> {
+async function descargarReporteEnTransito(ruta: string, division?: '1' | '2', incluirClientes = false): Promise<string> {
     const params = new URLSearchParams();
     if (division) params.set('division', division);
+    if (incluirClientes) params.set('incluir_clientes', '1');
 
     const response = await authFetch(`${ruta}?${params.toString()}`);
     if (!response.ok) {
@@ -394,8 +400,8 @@ async function descargarReporteEnTransito(ruta: string, division?: '1' | '2'): P
     return window.URL.createObjectURL(blob);
 }
 
-export function previsualizarReporteEnTransitoPollo(division?: '1' | '2'): Promise<string> {
-    return descargarReporteEnTransito('/pedido/generarReporteEnTransitoPollo', division);
+export function previsualizarReporteEnTransitoPollo(division?: '1' | '2', incluirClientes = false): Promise<string> {
+    return descargarReporteEnTransito('/pedido/generarReporteEnTransitoPollo', division, incluirClientes);
 }
 
 export function previsualizarReporteEnTransitoInsumos(division?: '1' | '2'): Promise<string> {
@@ -436,6 +442,7 @@ function paramsReporteDetalle(fecha: string, opciones: OpcionesReporteDetalle): 
     if (opciones.muelles && opciones.muelles.length > 0) params.set('muelles', opciones.muelles.join(','));
     if (opciones.fechaHasta) params.set('fecha_hasta', opciones.fechaHasta);
     if (opciones.productos && opciones.productos.length > 0) params.set('productos', opciones.productos.join(','));
+    if (opciones.incluirClientes) params.set('incluir_clientes', '1');
     return params;
 }
 
@@ -461,9 +468,10 @@ export function descargarExcelReporteDetalleInsumos(fecha: string, opciones: Omi
     );
 }
 
-export function descargarExcelReporteEnTransitoPollo(division?: '1' | '2'): Promise<void> {
+export function descargarExcelReporteEnTransitoPollo(division?: '1' | '2', incluirClientes = false): Promise<void> {
     const params = new URLSearchParams();
     if (division) params.set('division', division);
+    if (incluirClientes) params.set('incluir_clientes', '1');
     return descargarExcel('/pedido/generarReporteEnTransitoPollo', params, 'pedidos_pollo_en_transito.xlsx');
 }
 

@@ -93,6 +93,8 @@ export interface ProductoArtesano {
   // Unidades por caja y libras por unidad; null = no aplica.
   factor_caja: number | null;
   factor_libras: number | null;
+  // Unidades de SAP por unidad del pedido (lasaña: paquete de 4).
+  unidades_sap?: number;
 }
 
 export interface HistorialPedidoArtesano {
