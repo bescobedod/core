@@ -49,7 +49,8 @@ interface PedidoActivoFijoItem {
   nombre_articulo: string;
   unidad_medida: string;
   cantidad_pedida: number;
-  cantidad_entregada: number;
+  cantidad_asignada: number;
+  cantidad_recibida: number | null;
 }
 
 interface PedidoActivoFijo {
@@ -212,7 +213,8 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
           nombre_articulo: item.descripcion_producto,
           unidad_medida: item.unidad_medida,
           cantidad_pedida: Number(item.cantidad_solicitada),
-          cantidad_entregada: Number(item.cantidad_asignada) || 0
+          cantidad_asignada: Number(item.cantidad_asignada) || 0,
+          cantidad_recibida: item.cantidad_recibida === null || item.cantidad_recibida === undefined ? null : Number(item.cantidad_recibida)
         }))
       }));
 
@@ -346,7 +348,8 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
           nombre_articulo: a.article.ItemName,
           unidad_medida: a.article.SalesUnit,
           cantidad_pedida: a.cantidad,
-          cantidad_entregada: 0
+          cantidad_asignada: 0,
+          cantidad_recibida: null
         }))
       };
 
@@ -860,24 +863,36 @@ export function FixedAssetsView({ onBack }: FixedAssetsViewProps) {
               </DialogHeader>
               <div className="space-y-2 max-h-[400px] overflow-y-auto">
                 {selectedPedido.items.map((item, index) => {
-                  const completo = item.cantidad_entregada >= item.cantidad_pedida;
+                  const sinRecepcion = item.cantidad_recibida === null;
+                  const completo = !sinRecepcion && (item.cantidad_recibida as number) >= item.cantidad_pedida;
+                  const estiloEntregado = sinRecepcion
+                    ? { caja: "bg-gray-50", titulo: "text-gray-500", valor: "text-gray-500" }
+                    : completo
+                      ? { caja: "bg-green-50", titulo: "text-green-700", valor: "text-green-800" }
+                      : { caja: "bg-orange-50", titulo: "text-orange-700", valor: "text-orange-800" };
                   return (
                     <div key={index} className="border border-gray-200 rounded-lg p-3">
-                      <p className="text-sm font-medium text-gray-900">{item.nombre_articulo}</p>
+                      <p className="text-sm font-medium text-gray-900 break-words">{item.nombre_articulo}</p>
                       <p className="text-xs text-gray-500 font-mono mb-2">{item.codigo_articulo}</p>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <div className="bg-gray-50 rounded-lg p-2">
                           <p className="text-[10px] text-gray-500 uppercase font-bold">Pedido</p>
                           <p className="text-sm font-semibold text-gray-900">
                             {item.cantidad_pedida} {item.unidad_medida}
                           </p>
                         </div>
-                        <div className={`rounded-lg p-2 ${completo ? "bg-green-50" : "bg-orange-50"}`}>
-                          <p className={`text-[10px] uppercase font-bold ${completo ? "text-green-700" : "text-orange-700"}`}>
+                        <div className="bg-blue-50 rounded-lg p-2">
+                          <p className="text-[10px] text-blue-700 uppercase font-bold">Asignado</p>
+                          <p className="text-sm font-semibold text-blue-800">
+                            {item.cantidad_asignada} {item.unidad_medida}
+                          </p>
+                        </div>
+                        <div className={`rounded-lg p-2 ${estiloEntregado.caja}`}>
+                          <p className={`text-[10px] uppercase font-bold ${estiloEntregado.titulo}`}>
                             Entregado
                           </p>
-                          <p className={`text-sm font-semibold ${completo ? "text-green-800" : "text-orange-800"}`}>
-                            {item.cantidad_entregada} {item.unidad_medida}
+                          <p className={`text-sm font-semibold ${estiloEntregado.valor}`}>
+                            {sinRecepcion ? "Pendiente" : `${item.cantidad_recibida} ${item.unidad_medida}`}
                           </p>
                         </div>
                       </div>

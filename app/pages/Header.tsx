@@ -21,7 +21,8 @@ type View =
   | "reporte-pedidos-insumo"
   | "pedidos-especiales"
   | "pedidos-artesano"
-  | "autorizar-pedidos-especiales";
+  | "autorizar-pedidos-especiales"
+  | "sede-transporte";
 
 interface HeaderProps {
   userName: string | null;

@@ -77,14 +77,14 @@ export function LoginView({ onMicrosoftLogin, onRegister, onAuthenticated, error
         <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
           <div>
             <Label htmlFor="identifier" className="text-gray-900 mb-2 text-xs xs:text-base">
-              Correo o Nombre de Usuario
+              Código de Empleado
             </Label>
             <Input
               id="identifier"
               type="text"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
-              placeholder="Ingrese su correo o nombre de usuario"
+              placeholder="Ingrese su código de empleado"
               className="bg-white border-gray-300 h-10 sm:h-12 focus:border-[#2183AE] focus:ring-[#2183AE] text-sm sm:text-base text-gray-700"
               disabled={isLoading}
             />

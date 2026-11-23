@@ -116,6 +116,7 @@ export interface PedidoActivoFijoItemApi {
     unidad_medida: string;
     cantidad_solicitada: string;
     cantidad_asignada: string;
+    cantidad_recibida: string | null;
     estado_linea: string;
 }
 
@@ -330,8 +331,18 @@ export async function previsualizarQrsRutaInsumos(rutaId: string, fecha: string)
 // (incluye pedidos aún sin ruta); solo aplica a Pollo.
 export type DivisionReporte = '1' | '2' | '1,2';
 
+// Reportes de la vista de insumos: INSUMOS (insumos + activo fijo) o VERDURA.
+// Nunca se mezclan; sin categoría el backend asume INSUMOS.
+export type CategoriaReporteInsumos = 'INSUMOS' | 'VERDURA';
+
+const PREFIJO_CATEGORIA: Record<CategoriaReporteInsumos, string> = {
+    INSUMOS: 'insumos',
+    VERDURA: 'verduras',
+};
+
 export interface OpcionesReporteDetalle {
     division?: DivisionReporte;
+    categoria?: CategoriaReporteInsumos;
     muelles?: string[];
     // Búsqueda avanzada. `fecha` es el inicio; fechaHasta (si es posterior)
     // genera el reporte por rango, distinto al de una sola fecha. productos
@@ -349,8 +360,9 @@ export interface ProductoReporte {
 }
 
 // Productos que han aparecido en pedidos de ese tipo (INSUMOS incluye Activo
-// Fijo), para elegir cuáles incluir en la búsqueda avanzada del reporte.
-export async function getProductosReporte(tipoPedido: 'POLLO' | 'INSUMOS', incluirClientes = false): Promise<ProductoReporte[]> {
+// Fijo; VERDURA solo verduras), para elegir cuáles incluir en la búsqueda
+// avanzada del reporte. incluirClientes suma los productos de clientes externos (pollo artesano).
+export async function getProductosReporte(tipoPedido: 'POLLO' | 'INSUMOS' | 'VERDURA', incluirClientes = false): Promise<ProductoReporte[]> {
     const params = new URLSearchParams({ tipo_pedido: tipoPedido });
     if (incluirClientes) params.set('incluir_clientes', '1');
     const response = await authFetch(`/pedido/getProductosReporte?${params.toString()}`);
@@ -386,9 +398,10 @@ export async function previsualizarReporteDetalleInsumos(fecha: string, opciones
 // Pedidos EN_TRANSITO (aún sin entregar) de cualquier fecha, por división.
 // Sin `division` trae las dos divisiones, cada una en su sección; con una
 // sola (usuarios lectura_division) solo esa.
-async function descargarReporteEnTransito(ruta: string, division?: '1' | '2', incluirClientes = false): Promise<string> {
+async function descargarReporteEnTransito(ruta: string, division?: '1' | '2', categoria?: CategoriaReporteInsumos, incluirClientes = false): Promise<string> {
     const params = new URLSearchParams();
     if (division) params.set('division', division);
+    if (categoria) params.set('categoria', categoria);
     if (incluirClientes) params.set('incluir_clientes', '1');
 
     const response = await authFetch(`${ruta}?${params.toString()}`);
@@ -401,11 +414,11 @@ async function descargarReporteEnTransito(ruta: string, division?: '1' | '2', in
 }
 
 export function previsualizarReporteEnTransitoPollo(division?: '1' | '2', incluirClientes = false): Promise<string> {
-    return descargarReporteEnTransito('/pedido/generarReporteEnTransitoPollo', division, incluirClientes);
+    return descargarReporteEnTransito('/pedido/generarReporteEnTransitoPollo', division, undefined, incluirClientes);
 }
 
-export function previsualizarReporteEnTransitoInsumos(division?: '1' | '2'): Promise<string> {
-    return descargarReporteEnTransito('/pedido/generarReporteEnTransitoInsumos', division);
+export function previsualizarReporteEnTransitoInsumos(division?: '1' | '2', categoria: CategoriaReporteInsumos = 'INSUMOS'): Promise<string> {
+    return descargarReporteEnTransito('/pedido/generarReporteEnTransitoInsumos', division, categoria);
 }
 
 // ---- Versión en Excel de los mismos reportes (misma información que el PDF) ----
@@ -439,6 +452,7 @@ async function descargarExcel(ruta: string, params: URLSearchParams, nombre: str
 function paramsReporteDetalle(fecha: string, opciones: OpcionesReporteDetalle): URLSearchParams {
     const params = new URLSearchParams({ fecha });
     if (opciones.division) params.set('division', opciones.division);
+    if (opciones.categoria) params.set('categoria', opciones.categoria);
     if (opciones.muelles && opciones.muelles.length > 0) params.set('muelles', opciones.muelles.join(','));
     if (opciones.fechaHasta) params.set('fecha_hasta', opciones.fechaHasta);
     if (opciones.productos && opciones.productos.length > 0) params.set('productos', opciones.productos.join(','));
@@ -464,7 +478,7 @@ export function descargarExcelReporteDetalleInsumos(fecha: string, opciones: Omi
     return descargarExcel(
         '/pedido/generarReporteDetalleInsumos',
         paramsReporteDetalle(fecha, opciones),
-        `detalle_pedidos_insumos_${fecha}${sufijoRango(fecha, opciones)}.xlsx`
+        `detalle_pedidos_${PREFIJO_CATEGORIA[opciones.categoria ?? 'INSUMOS']}_${fecha}${sufijoRango(fecha, opciones)}.xlsx`
     );
 }
 
@@ -475,10 +489,11 @@ export function descargarExcelReporteEnTransitoPollo(division?: '1' | '2', inclu
     return descargarExcel('/pedido/generarReporteEnTransitoPollo', params, 'pedidos_pollo_en_transito.xlsx');
 }
 
-export function descargarExcelReporteEnTransitoInsumos(division?: '1' | '2'): Promise<void> {
+export function descargarExcelReporteEnTransitoInsumos(division?: '1' | '2', categoria: CategoriaReporteInsumos = 'INSUMOS'): Promise<void> {
     const params = new URLSearchParams();
     if (division) params.set('division', division);
-    return descargarExcel('/pedido/generarReporteEnTransitoInsumos', params, 'pedidos_insumos_en_transito.xlsx');
+    params.set('categoria', categoria);
+    return descargarExcel('/pedido/generarReporteEnTransitoInsumos', params, `pedidos_${PREFIJO_CATEGORIA[categoria]}_en_transito.xlsx`);
 }
 
 export interface FirmarTicketResponse {
@@ -531,6 +546,19 @@ export async function cambiarFechaRequeridaPedido(pedidoId: string, fechaRequeri
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
         throw new Error(data.details || data.error || "Error al cambiar la fecha de entrega");
+    }
+    return data;
+}
+
+// Cancela un pedido (pasa a CANCELADO; no se borra). El motivo es obligatorio.
+export async function cancelarPedido(pedidoId: string, motivo: string): Promise<{ success: boolean; pedido_id: string; numero_pedido: string }> {
+    const response = await authFetch(`/pedido/cancelarPedido`, {
+        method: 'POST',
+        body: JSON.stringify({ pedido_id: pedidoId, motivo })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.details || data.error || "Error al cancelar el pedido");
     }
     return data;
 }

@@ -39,6 +39,7 @@ const viewMap: Record<string, string> = {
   PilotoClienteSapInsumoView: 'piloto-cliente-sap-insumos',
   MenuPermisosView: 'menu-permisos',
   UsuarioMuellePolloView: 'usuario-muelle-pollo',
+  SedeTransporteView: 'sede-transporte',
   PedidosPolloLecturaView: 'reporte-pedidos-pollo',
   PedidosInsumoLecturaView: 'reporte-pedidos-insumo',
   VisitasView: 'visitas',

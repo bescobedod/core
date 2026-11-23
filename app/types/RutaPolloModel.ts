@@ -50,6 +50,8 @@ export interface AsignarTiendaRutaPayload {
 export interface MuelleUsuario {
   whs_code_origen: string;
   nombre_muelle: string;
+  // Todas las sedes del usuario (solo viene en la respuesta de getMuelleUsuario).
+  muelles?: MuelleUsuario[];
 }
 
 export interface CandadoRutaPollo {

@@ -4,7 +4,23 @@ import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { getRutasInsumos, crearRutaInsumos, actualizarRutaInsumos, buscarTiendasPdv, getTiendasDeRuta, asignarTiendaRuta, quitarTiendaDeRuta } from "../api/RutaInsumoApi";
-import { RutaInsumos, TiendaPdvBusqueda, TiendaRutaInsumos } from "../types/RutaInsumoModel";
+import { RutaInsumos, TiendaPdvBusqueda, TiendaRutaInsumos, TipoRutaInsumos } from "../types/RutaInsumoModel";
+
+const ETIQUETA_TIPO_RUTA: Record<TipoRutaInsumos, string> = {
+  INSUMOS: "Insumos",
+  VERDURA: "Verduras",
+};
+
+function BadgeTipoRuta({ tipo }: { tipo: TipoRutaInsumos }) {
+  const clases = tipo === "VERDURA"
+    ? "bg-green-100 text-green-700"
+    : "bg-[#2183AE]/10 text-[#2183AE]";
+  return (
+    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${clases}`}>
+      {ETIQUETA_TIPO_RUTA[tipo] ?? tipo}
+    </span>
+  );
+}
 
 export function RoutesInsumoView() {
   const [rutas, setRutas] = useState<RutaInsumos[]>([]);
@@ -18,6 +34,7 @@ export function RoutesInsumoView() {
   const [mostrarFormRuta, setMostrarFormRuta] = useState(false);
   const [nombreNuevaRuta, setNombreNuevaRuta] = useState("");
   const [whsDestinoNuevaRuta, setWhsDestinoNuevaRuta] = useState("");
+  const [tipoNuevaRuta, setTipoNuevaRuta] = useState<TipoRutaInsumos>("INSUMOS");
   const [creandoRuta, setCreandoRuta] = useState(false);
 
   // Edición de una ruta existente
@@ -79,10 +96,12 @@ export function RoutesInsumoView() {
       await crearRutaInsumos({
         nombre_ruta: nombreNuevaRuta.trim(),
         whs_code_destino: whsDestinoNuevaRuta.trim(),
+        tipo_ruta: tipoNuevaRuta,
       });
 
       setNombreNuevaRuta("");
       setWhsDestinoNuevaRuta("");
+      setTipoNuevaRuta("INSUMOS");
       setMostrarFormRuta(false);
       await cargarRutas();
     } catch (err) {
@@ -134,7 +153,7 @@ export function RoutesInsumoView() {
     setErrorAccion(null);
 
     try {
-      const data = await buscarTiendasPdv(busqueda.trim());
+      const data = await buscarTiendasPdv(busqueda.trim(), rutaSeleccionada?.tipo_ruta ?? "INSUMOS");
       setResultadosBusqueda(data);
     } catch (err) {
       setErrorAccion(err instanceof Error ? err.message : "Error al buscar tiendas");
@@ -173,7 +192,7 @@ export function RoutesInsumoView() {
     setErrorAccion(null);
 
     try {
-      await quitarTiendaDeRuta(idTiendaSimphony);
+      await quitarTiendaDeRuta(idTiendaSimphony, rutaSeleccionada.id);
       await seleccionarRuta(rutaSeleccionada);
       await cargarRutas();
     } catch (err) {
@@ -219,6 +238,17 @@ export function RoutesInsumoView() {
                 onChange={e => setWhsDestinoNuevaRuta(e.target.value)}
                 className="h-8 text-xs"
               />
+              <div>
+                <Label className="text-xs text-gray-700 mb-1 block">Tipo de ruta</Label>
+                <select
+                  value={tipoNuevaRuta}
+                  onChange={e => setTipoNuevaRuta(e.target.value as TipoRutaInsumos)}
+                  className="h-8 w-full text-xs border border-gray-200 rounded-md px-2 bg-white"
+                >
+                  <option value="INSUMOS">Insumos</option>
+                  <option value="VERDURA">Verduras</option>
+                </select>
+              </div>
               <div className="flex gap-2">
                 <Button
                   size="sm"
@@ -285,7 +315,10 @@ export function RoutesInsumoView() {
                   ) : (
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-sm text-gray-800">{r.nombre_ruta}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm text-gray-800">{r.nombre_ruta}</p>
+                          <BadgeTipoRuta tipo={r.tipo_ruta} />
+                        </div>
                         <p className="text-xs text-gray-400">Destino: {r.whs_code_destino} · {r.total_tiendas} tienda{r.total_tiendas !== 1 ? "s" : ""}</p>
                       </div>
                       <button
@@ -311,7 +344,10 @@ export function RoutesInsumoView() {
             </div>
           ) : (
             <>
-              <h3 className="text-sm font-medium text-gray-800 mb-3">{rutaSeleccionada.nombre_ruta}</h3>
+              <div className="flex items-center gap-2 mb-3">
+                <h3 className="text-sm font-medium text-gray-800">{rutaSeleccionada.nombre_ruta}</h3>
+                <BadgeTipoRuta tipo={rutaSeleccionada.tipo_ruta} />
+              </div>
 
               {errorAccion && (
                 <p className="text-xs text-red-600 mb-2 flex items-center gap-1"><AlertCircle size={12} /> {errorAccion}</p>
@@ -340,7 +376,11 @@ export function RoutesInsumoView() {
                           <p className="text-xs text-gray-700 truncate">{t.nombre_tienda}</p>
                           <p className="text-[11px] text-gray-400">
                             {t.codigo_tienda} · Simphony {t.id_tienda_simphony} · WhsCode {t.whs_code || "—"}
-                            {t.ya_asignada && <span className="text-amber-600"> · ya asignada a otra ruta</span>}
+                            {t.ya_asignada && (
+                              <span className="text-amber-600">
+                                {" "}· ya asignada a otra ruta de {ETIQUETA_TIPO_RUTA[rutaSeleccionada.tipo_ruta]?.toLowerCase() ?? "este tipo"}
+                              </span>
+                            )}
                           </p>
                         </div>
                         <Button size="sm" variant="outline" onClick={() => handleAsignar(t)} className="shrink-0">

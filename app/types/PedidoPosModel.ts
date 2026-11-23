@@ -61,9 +61,14 @@ export interface PedidosPosResponse {
 // pedidos de Insumos y de Activo Fijo (misma bodega/base SAP) de una misma
 // tienda en una sola tarjeta, con cada tipo como un sub-bloque aparte.
 // POLLO no usa esto, sigue con PedidoPosTienda/PedidoPosRuta tal cual.
+// Tipos que viajan en el flujo de insumos: el bloque "insumos" de la tarjeta
+// trae INSUMOS o VERDURA; el de "activo_fijo" siempre ACTIVO_FIJO.
+export type TipoPedidoFlujoInsumos = 'INSUMOS' | 'ACTIVO_FIJO' | 'VERDURA';
+
 export interface PedidoPosDetallePedido {
   pedido_id: string;
   numero_pedido: string;
+  tipo_pedido: TipoPedidoFlujoInsumos;
   fecha_pedido: string;
   hora_pedido: string;
   fecha_requerida: string;
@@ -93,6 +98,8 @@ export interface PedidoPosRutaInsumos {
   estado_general: string;
   sap_docnum: number | null;
   sap_docentry: number | null;
+  // true cuando todos los pedidos de la ruta son de verduras (rutas 13/14)
+  es_verdura: boolean;
   tiendas: PedidoPosTiendaInsumos[];
 }
 

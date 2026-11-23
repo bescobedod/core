@@ -31,6 +31,7 @@ import { PilotoClienteSapPolloView } from "./pages/PilotoClienteSapPolloView";
 import { PilotoClienteSapInsumoView } from "./pages/PilotoClienteSapInsumoView";
 import { MenuPermisosView } from "./pages/MenuPermisosView";
 import { UsuarioMuellePolloView } from "./pages/UsuarioMuellePolloView";
+import { SedeTransporteView } from "./pages/SedeTransporteView";
 import { PedidosPolloLecturaView } from "./pages/PedidosPolloLecturaView";
 import { PedidosInsumoLecturaView } from "./pages/PedidosInsumoLecturaView";
 import { VisitasView } from "./pages/VisitasView";
@@ -64,6 +65,7 @@ type View =
   | "piloto-cliente-sap-insumos"
   | "menu-permisos"
   | "usuario-muelle-pollo"
+  | "sede-transporte"
   | "reporte-pedidos-pollo"
   | "reporte-pedidos-insumo"
   | "visitas"
@@ -317,6 +319,7 @@ export default function App() {
             {currentView === "piloto-cliente-sap-insumos" && <PilotoClienteSapInsumoView />}
             {currentView === "menu-permisos" && <MenuPermisosView />}
             {currentView === "usuario-muelle-pollo" && <UsuarioMuellePolloView />}
+            {currentView === "sede-transporte" && <SedeTransporteView />}
             {currentView === "visitas" && <VisitasView />}
             {currentView === "marcaje" && <MarcajeView />}
             {currentView === "autorizar-pedidos-especiales" && <AutorizarPedidosEspecialesView />}
