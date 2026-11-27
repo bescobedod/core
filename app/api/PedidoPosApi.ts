@@ -302,8 +302,9 @@ export async function previsualizarResumenRutaPollo(rutaId: string, fecha: strin
     return window.URL.createObjectURL(blob);
 }
 
-export async function previsualizarQrsRutaPollo(rutaId: string, fecha: string): Promise<string> {
+export async function previsualizarQrsRutaPollo(rutaId: string, fecha: string, incluirClientes = false): Promise<string> {
     const params = new URLSearchParams({ ruta_id: rutaId, fecha });
+    if (incluirClientes) params.set('incluir_clientes', '1');
     const response = await authFetch(`/pedido/generarQrsRutaPollo?${params.toString()}`);
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));

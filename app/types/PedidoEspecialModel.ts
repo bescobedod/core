@@ -138,7 +138,11 @@ export interface PedidoArtesano {
   direccion_entrega: string | null;
   telefono_contacto: string | null;
   condicion_pago: CondicionPagoArtesano;
-  numero_boleta: string | null;
+  // Total a cobrar; null si falta algún precio. depositos, depositado y saldo son null si la consulta no los trae.
+  total: number | null;
+  depositos: DepositoArtesano[] | null;
+  depositado: number | null;
+  saldo: number | null;
   comentario: string | null;
   motivo_rechazo: string | null;
   rechazado_por: string | null;
@@ -163,20 +167,31 @@ export interface PedidoArtesano {
   historial: HistorialPedidoArtesano[];
 }
 
+export interface DatosDeposito {
+  numero_boleta: string;
+  fecha_deposito: string;
+  monto: number;
+  banco: string | null;
+}
+
+export interface DepositoArtesano extends DatosDeposito {
+  id: string;
+}
+
 export interface FiltrosPedidosArtesano {
-  id_usuario?: string;
+  clienteId?: string;
   estados?: EstadoPedidoArtesano[];
   numero?: string;
-  // Parte del nombre o del NIT del cliente.
-  cliente?: string;
   fechaDesde?: string;
   fechaHasta?: string;
   page?: number;
 }
 
-export interface UsuarioArtesano {
-  id_usuario: string;
+// Cliente con al menos un pedido, para el filtro de la búsqueda.
+export interface ClienteConPedidos {
+  id: string;
   nombre: string;
+  nit: string | null;
 }
 
 export interface CrearPedidoArtesanoPayload {
@@ -188,8 +203,11 @@ export interface CrearPedidoArtesanoPayload {
   // Si el cliente no tenía dirección, se completa al crear el pedido. Vacía solo para empleados.
   direccion: string;
   telefono_contacto: string | null;
+  // NIT del pedido; si cambia, también se actualiza en el cliente.
+  nit: string | null;
   condicion_pago: CondicionPagoArtesano;
-  numero_boleta: string | null;
+  // Primer depósito del pedido; null si ya tiene depósitos o no paga por depósito.
+  deposito: DatosDeposito | null;
   comentario: string | null;
   items: { codigo_producto: string; cantidad: number }[];
 }

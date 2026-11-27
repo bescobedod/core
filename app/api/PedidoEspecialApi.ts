@@ -5,6 +5,7 @@ import {
   CrearClienteAvicolaPayload,
   CrearPedidoArtesanoPayload,
   EditarPedidoArtesanoPayload,
+  DatosDeposito,
   FiltrosPedidosArtesano,
   FiltrosPedidosEspeciales,
   ItemStockEspecial,
@@ -14,7 +15,7 @@ import {
   PilotoArtesano,
   ProductoArtesano,
   StockArtesano,
-  UsuarioArtesano,
+  ClienteConPedidos,
 } from "../types/PedidoEspecialModel";
 
 async function leerRespuesta(response: Response, mensajePorDefecto: string) {
@@ -99,18 +100,25 @@ export async function getProductosArtesano(): Promise<ProductoArtesano[]> {
   return (await leerRespuesta(response, "Error al obtener los productos")).productos;
 }
 
-export async function getUsuariosArtesano(): Promise<UsuarioArtesano[]> {
-  const response = await authFetch("/pedidoArtesano/getUsuarios");
+// Precio por código de producto para un cliente; null = el producto no tiene precio.
+export async function getPreciosArtesano(clienteId: string): Promise<Record<string, number | null>> {
+  const params = new URLSearchParams({ cliente_id: clienteId });
+  const response = await authFetch(`/pedidoArtesano/getPrecios?${params.toString()}`);
 
-  return (await leerRespuesta(response, "Error al obtener los usuarios")).usuarios;
+  return (await leerRespuesta(response, "Error al obtener los precios")).precios;
+}
+
+export async function getClientesConPedidosArtesano(): Promise<ClienteConPedidos[]> {
+  const response = await authFetch("/pedidoArtesano/getClientesPedidos");
+
+  return (await leerRespuesta(response, "Error al obtener los clientes")).clientes;
 }
 
 export async function getPedidosArtesano(filtros: FiltrosPedidosArtesano = {}): Promise<PaginaPedidos<PedidoArtesano>> {
   const params = new URLSearchParams();
-  if (filtros.id_usuario) params.set("id_usuario", filtros.id_usuario);
+  if (filtros.clienteId) params.set("cliente_id", filtros.clienteId);
   if (filtros.estados && filtros.estados.length > 0) params.set("estado", filtros.estados.join(","));
   if (filtros.numero) params.set("numero", filtros.numero);
-  if (filtros.cliente) params.set("cliente", filtros.cliente);
   if (filtros.fechaDesde) params.set("fecha_desde", filtros.fechaDesde);
   if (filtros.fechaHasta) params.set("fecha_hasta", filtros.fechaHasta);
   if (filtros.page) params.set("page", String(filtros.page));
@@ -140,15 +148,23 @@ export async function crearPedidoArtesano(payload: CrearPedidoArtesanoPayload): 
 export async function completarPagoArtesano(
   id: string,
   condicionPago: "DEPOSITO" | "PLANILLA",
-  numeroBoleta: string | null
+  deposito: DatosDeposito | null
 ): Promise<PedidoArtesano> {
   return (
-    await enviar(
-      "/pedidoArtesano/completarPago",
-      { id, condicion_pago: condicionPago, numero_boleta: numeroBoleta },
-      "Error al completar el pago del pedido"
-    )
+    await enviar("/pedidoArtesano/completarPago", { id, condicion_pago: condicionPago, deposito }, "Error al completar el pago del pedido")
   ).pedido;
+}
+
+export async function registrarDepositoArtesano(id: string, deposito: DatosDeposito): Promise<PedidoArtesano> {
+  return (await enviar("/pedidoArtesano/registrarDeposito", { id, deposito }, "Error al registrar el depósito")).pedido;
+}
+
+export async function editarDepositoArtesano(id: string, idDeposito: string, deposito: DatosDeposito): Promise<PedidoArtesano> {
+  return (await enviar("/pedidoArtesano/editarDeposito", { id, id_deposito: idDeposito, deposito }, "Error al modificar el depósito")).pedido;
+}
+
+export async function eliminarDepositoArtesano(id: string, idDeposito: string): Promise<PedidoArtesano> {
+  return (await enviar("/pedidoArtesano/eliminarDeposito", { id, id_deposito: idDeposito }, "Error al quitar el depósito")).pedido;
 }
 
 export async function editarPedidoArtesano(payload: EditarPedidoArtesanoPayload): Promise<PedidoArtesano> {
@@ -260,10 +276,9 @@ export async function getUrlEvidenciaArtesano(id: string): Promise<string> {
 
 function paramsBusqueda(filtros: FiltrosPedidosArtesano): URLSearchParams {
   const params = new URLSearchParams();
-  if (filtros.id_usuario) params.set("id_usuario", filtros.id_usuario);
+  if (filtros.clienteId) params.set("cliente_id", filtros.clienteId);
   if (filtros.estados && filtros.estados.length > 0) params.set("estado", filtros.estados.join(","));
   if (filtros.numero) params.set("numero", filtros.numero);
-  if (filtros.cliente) params.set("cliente", filtros.cliente);
   if (filtros.fechaDesde) params.set("fecha_desde", filtros.fechaDesde);
   if (filtros.fechaHasta) params.set("fecha_hasta", filtros.fechaHasta);
 

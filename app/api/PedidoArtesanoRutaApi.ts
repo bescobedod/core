@@ -75,16 +75,17 @@ export interface EnviarRutaArtesanoResponse {
   success: boolean;
   sap_docnum: number;
   pedidos_cargados: number;
+  tiendas_enviadas: number;
   pedidos_sin_validar: number;
 }
 
 // liberarCandado: false cuando la ruta también lleva tiendas; el envío de las tiendas es el que libera el candado.
-export async function enviarRutaArtesano(rutaId: string, fecha: string, liberarCandado = true): Promise<EnviarRutaArtesanoResponse> {
+export async function enviarRutaArtesano(rutaId: string, fecha: string): Promise<EnviarRutaArtesanoResponse> {
   return leer(
     await authFetch("/pedidoArtesano/enviarRuta", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ruta_id: rutaId, fecha, liberar_candado: liberarCandado }),
+      body: JSON.stringify({ ruta_id: rutaId, fecha }),
     }),
     "Error al enviar la ruta"
   );
@@ -177,4 +178,15 @@ export async function descargarExcelReporteDetalleArtesano(fecha: string, opcion
   const sufijo = opciones.fechaHasta && opciones.fechaHasta > fecha ? `_a_${opciones.fechaHasta}` : "";
 
   guardarArchivo(blob, `pollo_artesano_detalle_${fecha}${sufijo}.xlsx`);
+}
+
+// Cambia el día de entrega de un cliente (misma ruta). Si estaba validado, vuelve a creado.
+export async function cambiarFechaRequeridaArtesano(
+  pedidoId: string,
+  fechaRequerida: string
+): Promise<{ numero_pedido: string; fecha_requerida: string; asignacion_reiniciada: boolean }> {
+  return leer(
+    await authFetch("/pedidoArtesano/cambiarFechaRequerida", { method: "POST", body: JSON.stringify({ id: pedidoId, fecha_requerida: fechaRequerida }) }),
+    "Error al cambiar la fecha de entrega"
+  );
 }

@@ -45,8 +45,9 @@ import {
   exportarPedidosArtesanoPorCliente,
   getPdfEnviosArtesano,
   getPedidosArtesano,
+  getPreciosArtesano,
   getProductosArtesano,
-  getUsuariosArtesano,
+  getClientesConPedidosArtesano,
 } from "../api/PedidoEspecialApi";
 import {
   ClienteAvicola,
@@ -55,12 +56,21 @@ import {
   Paginacion,
   PedidoArtesano,
   ProductoArtesano,
-  UsuarioArtesano,
+  ClienteConPedidos,
 } from "../types/PedidoEspecialModel";
 import { RutaPollo, TiendaRutaPollo } from "../types/RutaPolloModel";
 import { MUELLES_POLLO } from "./ReporteParametrosModal";
 import { BannerMensaje, ControlesPaginacion, ModalBase, formatearFechaCorta } from "./PedidoEspecialComun";
 import { CancelarModal, VisorPdf } from "./ComponentesEnvioArtesano";
+import {
+  CamposDeposito,
+  FormDeposito,
+  ResumenDepositos,
+  datosDeposito,
+  depositoVacio,
+  formatearQuetzales,
+  problemaDeposito,
+} from "./DepositosArtesano";
 
 function hoy(): string {
   return new Date().toISOString().slice(0, 10);
@@ -103,9 +113,16 @@ export function EtiquetaPago({ pedido }: { pedido: PedidoArtesano }) {
   const cfg = PAGO_CFG[pedido.condicion_pago];
 
   return (
-    <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border whitespace-nowrap shrink-0 ${cfg.chip}`}>
-      <CreditCard size={12} /> {cfg.label}
-    </span>
+    <>
+      <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border whitespace-nowrap shrink-0 ${cfg.chip}`}>
+        <CreditCard size={12} /> {cfg.label}
+      </span>
+      {pedido.condicion_pago === "DEPOSITO" && pedido.saldo !== null && pedido.saldo > 0 && (
+        <span className="text-xs px-2 py-0.5 rounded-full border whitespace-nowrap shrink-0 bg-red-50 text-red-700 border-red-200">
+          Falta {formatearQuetzales(pedido.saldo)}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -173,7 +190,7 @@ function CompletarPagoModal({
   onCompletado: () => void;
 }) {
   const [condicion, setCondicion] = useState<"DEPOSITO" | "PLANILLA">("DEPOSITO");
-  const [boleta, setBoleta] = useState("");
+  const [deposito, setDeposito] = useState<FormDeposito>(() => depositoVacio(pedido.total));
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -182,7 +199,7 @@ function CompletarPagoModal({
     setError(null);
 
     try {
-      await completarPagoArtesano(pedido.id, condicion, condicion === "DEPOSITO" ? boleta.trim() : null);
+      await completarPagoArtesano(pedido.id, condicion, condicion === "DEPOSITO" ? datosDeposito(deposito) : null);
       onCompletado();
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo registrar el pago");
@@ -214,10 +231,7 @@ function CompletarPagoModal({
         </div>
 
         {condicion === "DEPOSITO" ? (
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Número de boleta *</label>
-            <Input value={boleta} onChange={(e) => setBoleta(e.target.value)} maxLength={50} />
-          </div>
+          <CamposDeposito form={deposito} onChange={(cambios) => setDeposito((prev) => ({ ...prev, ...cambios }))} porCubrir={pedido.total} />
         ) : (
           <p className="text-xs text-gray-500">El descuento de planilla es solo para clientes con código de empleado.</p>
         )}
@@ -228,7 +242,7 @@ function CompletarPagoModal({
         <Button onClick={onClose} disabled={guardando} variant="outline" size="sm">
           Cancelar
         </Button>
-        <Button onClick={guardar} disabled={guardando || (condicion === "DEPOSITO" && boleta.trim() === "")} variant="success" size="sm">
+        <Button onClick={guardar} disabled={guardando || (condicion === "DEPOSITO" && problemaDeposito(deposito) !== null)} variant="success" size="sm">
           {guardando && <Loader2 size={14} className="animate-spin mr-1.5" />}
           Registrar pago
         </Button>
@@ -333,7 +347,6 @@ function TarjetaArtesano({
                 Entrega: <span className="font-medium text-gray-700">{formatearFechaCorta(pedido.fecha_requerida)}</span>
               </span>
               <span>{pedido.nombre_ruta}</span>
-              {pedido.condicion_pago === "DEPOSITO" && pedido.numero_boleta && <span>Boleta {pedido.numero_boleta}</span>}
               <span className="sm:hidden">{pedido.items.length} ítems</span>
             </div>
 
@@ -402,6 +415,12 @@ function TarjetaArtesano({
                   </div>
                 ))}
               </div>
+
+              <ResumenDepositos
+                pedido={pedido}
+                editable={puedeCompletarPago && pedido.estado !== "RECHAZADO" && pedido.estado !== "CANCELADO"}
+                onCambio={onCambio}
+              />
 
               <SeguimientoPedido pedido={pedido} />
 
@@ -541,10 +560,9 @@ function NuevoClienteModal({
 }
 
 interface FiltrosBusqueda {
-  usuario: string;
+  clienteId: string;
   estado: "" | EstadoPedidoArtesano;
   numero: string;
-  cliente: string;
   fechaDesde: string;
   fechaHasta: string;
 }
@@ -557,20 +575,18 @@ function BuscarPedidos({
   numeroInicial: string;
   onEditar?: (pedido: PedidoArtesano) => void;
 }) {
-  const [usuarios, setUsuarios] = useState<UsuarioArtesano[]>([]);
-  const [usuario, setUsuario] = useState("");
+  const [clientesConPedidos, setClientesConPedidos] = useState<ClienteConPedidos[]>([]);
+  const [clienteId, setClienteId] = useState("");
   const [estado, setEstado] = useState<"" | EstadoPedidoArtesano>("");
   const [numero, setNumero] = useState(numeroInicial);
-  const [cliente, setCliente] = useState("");
   const [fechaDesde, setFechaDesde] = useState("");
   const [fechaHasta, setFechaHasta] = useState("");
   // Filtros con los que se hizo la última búsqueda: al cambiar de página se
   // usan estos, no lo que se esté editando en los campos.
   const [aplicados, setAplicados] = useState<FiltrosBusqueda>({
-    usuario: "",
+    clienteId: "",
     estado: "",
     numero: numeroInicial,
-    cliente: "",
     fechaDesde: "",
     fechaHasta: "",
   });
@@ -585,9 +601,9 @@ function BuscarPedidos({
   const fechasInvertidas = fechaDesde !== "" && fechaHasta !== "" && fechaDesde > fechaHasta;
 
   useEffect(() => {
-    getUsuariosArtesano()
-      .then(setUsuarios)
-      .catch(() => setUsuarios([]));
+    getClientesConPedidosArtesano()
+      .then(setClientesConPedidos)
+      .catch(() => setClientesConPedidos([]));
   }, []);
 
   const buscar = async (pagina: number, filtros: FiltrosBusqueda) => {
@@ -596,10 +612,9 @@ function BuscarPedidos({
 
     try {
       const resultado = await getPedidosArtesano({
-        id_usuario: filtros.usuario || undefined,
+        clienteId: filtros.clienteId || undefined,
         estados: filtros.estado ? [filtros.estado] : undefined,
         numero: filtros.numero.trim() || undefined,
-        cliente: filtros.cliente.trim() || undefined,
         fechaDesde: filtros.fechaDesde || undefined,
         fechaHasta: filtros.fechaHasta || undefined,
         page: pagina,
@@ -641,7 +656,7 @@ function BuscarPedidos({
   }, [numeroInicial]);
 
   const handleBuscar = () => {
-    const filtros: FiltrosBusqueda = { usuario, estado, numero, cliente, fechaDesde, fechaHasta };
+    const filtros: FiltrosBusqueda = { clienteId, estado, numero, fechaDesde, fechaHasta };
     setAplicados(filtros);
     buscar(1, filtros);
   };
@@ -653,10 +668,9 @@ function BuscarPedidos({
 
     try {
       await exportarPedidosArtesano({
-        id_usuario: aplicados.usuario || undefined,
+        clienteId: aplicados.clienteId || undefined,
         estados: aplicados.estado ? [aplicados.estado] : undefined,
         numero: aplicados.numero.trim() || undefined,
-        cliente: aplicados.cliente.trim() || undefined,
         fechaDesde: aplicados.fechaDesde || undefined,
         fechaHasta: aplicados.fechaHasta || undefined,
       });
@@ -674,10 +688,9 @@ function BuscarPedidos({
 
     try {
       await exportarPedidosArtesanoPorCliente({
-        id_usuario: aplicados.usuario || undefined,
+        clienteId: aplicados.clienteId || undefined,
         estados: aplicados.estado ? [aplicados.estado] : undefined,
         numero: aplicados.numero.trim() || undefined,
-        cliente: aplicados.cliente.trim() || undefined,
         fechaDesde: aplicados.fechaDesde || undefined,
         fechaHasta: aplicados.fechaHasta || undefined,
       });
@@ -689,10 +702,9 @@ function BuscarPedidos({
   };
 
   const handleLimpiar = () => {
-    setUsuario("");
+    setClienteId("");
     setEstado("");
     setNumero("");
-    setCliente("");
     setFechaDesde("");
     setFechaHasta("");
     setPedidos([]);
@@ -706,16 +718,17 @@ function BuscarPedidos({
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Usuario</label>
+            <label className="block text-xs text-gray-500 mb-1">Cliente</label>
             <select
-              value={usuario}
-              onChange={(e) => setUsuario(e.target.value)}
+              value={clienteId}
+              onChange={(e) => setClienteId(e.target.value)}
               className="w-full h-9 px-3 text-sm border border-gray-300 rounded-md bg-white focus:ring-2 focus:ring-[#2183AE] focus:border-transparent"
             >
-              <option value="">Todos los usuarios</option>
-              {usuarios.map((u) => (
-                <option key={u.id_usuario} value={u.id_usuario}>
-                  {u.nombre}
+              <option value="">Todos los clientes</option>
+              {clientesConPedidos.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {/* El NIT solo se muestra para distinguir nombres repetidos */}
+                  {c.nit && clientesConPedidos.some((o) => o.id !== c.id && o.nombre === c.nombre) ? `${c.nombre} (NIT ${c.nit})` : c.nombre}
                 </option>
               ))}
             </select>
@@ -738,10 +751,6 @@ function BuscarPedidos({
           <div>
             <label className="block text-xs text-gray-500 mb-1">Número de pedido</label>
             <Input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="PA-2026-000001" maxLength={30} />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Cliente</label>
-            <Input value={cliente} onChange={(e) => setCliente(e.target.value)} placeholder="Nombre o NIT" maxLength={100} />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Requerido desde</label>
@@ -856,15 +865,42 @@ function NuevoPedido({
   const [clienteId, setClienteId] = useState(pedido?.cliente_id ?? "");
   const [direccion, setDireccion] = useState(pedido?.direccion_entrega ?? "");
   const [telefono, setTelefono] = useState(pedido?.telefono_contacto ?? "");
+  const [nit, setNit] = useState(pedido?.cliente_nit ?? "");
   const [lineas, setLineas] = useState<LineaPedido[]>(
     pedido ? pedido.items.map((i) => ({ codigo_producto: i.codigo_producto, cantidad: String(i.cantidad) })) : []
   );
   const [condicionPago, setCondicionPago] = useState<CondicionPagoArtesano>(pedido?.condicion_pago ?? "DEPOSITO");
-  const [numeroBoleta, setNumeroBoleta] = useState(pedido?.numero_boleta ?? "");
+  const [deposito, setDeposito] = useState<FormDeposito>(() => depositoVacio());
+  // Mientras no se escriba otra cantidad, la depositada es el total del pedido.
+  const [montoEditado, setMontoEditado] = useState(false);
   const [comentario, setComentario] = useState(pedido?.comentario ?? "");
   const [mostrarNuevoCliente, setMostrarNuevoCliente] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
+  // Se guarda de qué cliente son para no mostrar precios del cliente anterior.
+  const [preciosCliente, setPreciosCliente] = useState<{
+    clienteId: string;
+    valores: Record<string, number | null>;
+    error: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!clienteId) return;
+
+    let vigente = true;
+
+    getPreciosArtesano(clienteId)
+      .then((valores) => {
+        if (vigente) setPreciosCliente({ clienteId, valores, error: false });
+      })
+      .catch(() => {
+        if (vigente) setPreciosCliente({ clienteId, valores: {}, error: true });
+      });
+
+    return () => {
+      vigente = false;
+    };
+  }, [clienteId]);
 
   useEffect(() => {
     Promise.all([getRutasPollo(), buscarClientesAvicola(""), getProductosArtesano()])
@@ -923,7 +959,7 @@ function NuevoPedido({
   );
 
   const opcionesClientes = useMemo(
-    () => clientes.map((c) => ({ id: c.id, name: c.nit ? `${c.nombre} · ${c.nit}` : c.nombre })),
+    () => clientes.map((c) => ({ id: c.id, name: c.nombre })),
     [clientes]
   );
 
@@ -934,11 +970,25 @@ function NuevoPedido({
     setClienteId(id);
     setDireccion(clientes.find((c) => c.id === id)?.direccion ?? "");
     setTelefono(clientes.find((c) => c.id === id)?.telefono ?? "");
+    setNit(clientes.find((c) => c.id === id)?.nit ?? "");
   };
 
   const actualizarLinea = (indice: number, cambios: Partial<LineaPedido>) => {
     setLineas((prev) => prev.map((l, i) => (i === indice ? { ...l, ...cambios } : l)));
   };
+
+  const precios = preciosCliente && preciosCliente.clienteId === clienteId ? preciosCliente : null;
+
+  // Precio y subtotal de una línea; null mientras no se conozca el precio.
+  const importeLinea = (linea: LineaPedido) => {
+    const precio = precios?.valores[linea.codigo_producto] ?? null;
+    const cantidad = Math.max(0, Number(linea.cantidad) || 0);
+
+    return { precio, subtotal: precio === null ? null : Math.round(precio * cantidad * 100) / 100 };
+  };
+
+  const subtotales = lineas.map((l) => importeLinea(l).subtotal);
+  const total = lineas.length > 0 && subtotales.every((s) => s !== null) ? subtotales.reduce<number>((suma, s) => suma + (s ?? 0), 0) : null;
 
   const problemas: string[] = [];
   if (!fechaRequerida) problemas.push("Elige la fecha requerida.");
@@ -946,9 +996,14 @@ function NuevoPedido({
   if (!rutaId) problemas.push("Elige la ruta.");
   if (!clienteId) problemas.push("Elige el cliente.");
   else if (direccion.trim() === "" && !cliente?.codigo_empleado) problemas.push("El cliente necesita una dirección de entrega.");
-  if (lineas.length === 0 || lineas.some((l) => !(Number(l.cantidad) > 0))) problemas.push("Cada producto necesita una cantidad mayor a 0.");
+  if (lineas.length === 0) problemas.push("Agrega al menos un producto.");
+  else if (lineas.some((l) => !(Number(l.cantidad) > 0))) problemas.push("Cada producto necesita una cantidad mayor a 0.");
   if (condicionPago === "PLANILLA" && cliente && !cliente.codigo_empleado) problemas.push("El descuento de planilla es solo para clientes con código de empleado.");
-  if (condicionPago === "DEPOSITO" && numeroBoleta.trim() === "") problemas.push("Escribe el número de boleta del depósito.");
+  const depositosGuardados = pedido?.depositos ?? [];
+  const pideDeposito = condicionPago === "DEPOSITO" && depositosGuardados.length === 0;
+  const formDeposito = montoEditado ? deposito : { ...deposito, monto: total === null ? "" : total.toFixed(2) };
+  const errorDeposito = pideDeposito ? problemaDeposito(formDeposito) : null;
+  if (errorDeposito) problemas.push(errorDeposito);
 
   const handleGuardar = async () => {
     setEnviando(true);
@@ -962,8 +1017,9 @@ function NuevoPedido({
         cliente_id: clienteId,
         direccion: direccion.trim(),
         telefono_contacto: telefono.trim() || null,
+        nit: nit.trim() || null,
         condicion_pago: condicionPago,
-        numero_boleta: condicionPago === "DEPOSITO" ? numeroBoleta.trim() || null : null,
+        deposito: pideDeposito ? datosDeposito(formDeposito) : null,
         comentario: comentario.trim() || null,
         items: lineas.map((l) => ({ codigo_producto: l.codigo_producto, cantidad: Number(l.cantidad) })),
       };
@@ -1064,7 +1120,7 @@ function NuevoPedido({
               value={clienteId}
               onChange={seleccionarCliente}
               placeholder="Seleccione un cliente"
-              searchPlaceholder="Buscar por nombre o NIT..."
+              searchPlaceholder="Buscar por nombre..."
               emptyMessage="No se encontraron clientes"
               className="h-11"
             />
@@ -1072,10 +1128,9 @@ function NuevoPedido({
 
           {cliente && (
             <div className="sm:col-span-2">
-              <p className="text-xs text-gray-500 mb-3">
-                {cliente.nit ? `NIT ${cliente.nit}` : "Sin NIT"}
-                {cliente.codigo_empleado ? ` · Empleado ${cliente.codigo_empleado}` : ""}
-              </p>
+              {cliente.codigo_empleado && <p className="text-xs text-gray-500 mb-3">Empleado {cliente.codigo_empleado}</p>}
+              <Label className="text-xs text-gray-700 mb-1.5 block">NIT</Label>
+              <Input value={nit} onChange={(e) => setNit(e.target.value)} maxLength={20} className="h-11 mb-3" />
               <Label className="text-xs text-gray-700 mb-1.5 block">Dirección de entrega {cliente.codigo_empleado ? "" : "*"}</Label>
               <Input value={direccion} onChange={(e) => setDireccion(e.target.value)} maxLength={250} className="h-11" />
               {!cliente.direccion && !cliente.codigo_empleado && (
@@ -1100,6 +1155,7 @@ function NuevoPedido({
             const paquete = (producto?.unidades_sap ?? 1) > 1;
             const unidad = paquete ? `paquete de ${producto?.unidades_sap}` : (producto?.unidad_medida ?? "").toLowerCase();
             const libras = producto?.factor_caja && producto.factor_libras ? ` · ${producto.factor_libras} lbs` : "";
+            const { precio, subtotal } = importeLinea(linea);
 
             return (
               <div key={linea.codigo_producto} className="border border-gray-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center gap-3">
@@ -1114,8 +1170,19 @@ function NuevoPedido({
                     )}
                   </p>
                   <p className="text-xs text-gray-500 font-mono break-words">{linea.codigo_producto}</p>
+                  {precio !== null && (
+                    <p className="text-xs text-gray-600 mt-1">
+                      {formatearQuetzales(precio)} por {paquete ? "paquete" : (unidad || "unidad")}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                  <div className="text-right min-w-[5.5rem]">
+                    <span className="text-[10px] uppercase font-bold text-gray-500 block mb-1">Subtotal</span>
+                    <span className="h-9 flex items-center justify-end text-sm font-semibold text-gray-900">
+                      {subtotal === null ? "—" : formatearQuetzales(subtotal)}
+                    </span>
+                  </div>
                   <div>
                     <Label className="text-[10px] uppercase font-bold text-gray-500 block mb-1">Cantidad</Label>
                     <div className="flex items-center gap-2">
@@ -1148,21 +1215,30 @@ function NuevoPedido({
                       </div>
                     </div>
                   </div>
-                  {lineas.length > 1 && (
-                    <Button
-                      type="button"
-                      onClick={() => setLineas((prev) => prev.filter((_, i) => i !== indice))}
-                      variant="ghost"
-                      size="sm"
-                      className="text-red-500 hover:bg-red-50 shrink-0"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
+                  <Button
+                    type="button"
+                    onClick={() => setLineas((prev) => prev.filter((_, i) => i !== indice))}
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-500 hover:bg-red-50 shrink-0"
+                    aria-label="Quitar producto"
+                    title="Quitar producto"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
             );
           })}
+        </div>
+        <div className="mt-3 flex items-center justify-between gap-3 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
+          <div>
+            <p className="text-sm font-bold text-gray-900">Total del pedido</p>
+            {!clienteId && <p className="text-xs text-gray-500">Elige el cliente para ver los precios.</p>}
+            {clienteId && !precios && <p className="text-xs text-gray-500">Consultando precios…</p>}
+            {precios?.error && <p className="text-xs text-red-600">No se pudieron cargar los precios.</p>}
+          </div>
+          <p className="text-xl font-bold text-[#2183AE] whitespace-nowrap">{total === null ? "—" : formatearQuetzales(total)}</p>
         </div>
         {productosDisponibles.length > 0 && (
           <div className="mt-3 w-full sm:w-72">
@@ -1190,7 +1266,8 @@ function NuevoPedido({
                   key={condicion}
                   type="button"
                   onClick={() => setCondicionPago(condicion)}
-                  className={`h-11 rounded-md border text-sm font-medium transition-colors ${
+                  disabled={depositosGuardados.length > 0 && condicion !== "DEPOSITO"}
+                  className={`h-11 rounded-md border text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                     condicionPago === condicion
                       ? "border-[#2183AE] bg-[#2183AE] text-white shadow"
                       : "border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
@@ -1202,20 +1279,25 @@ function NuevoPedido({
             </div>
           </div>
 
-          <AnimatePresence initial={false}>
-            {condicionPago === "DEPOSITO" && (
-              <motion.div
-                key="boleta"
-                initial={{ opacity: 0, y: -5 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -5 }}
-                transition={{ duration: 0.2 }}
-              >
-                <Label className="text-xs text-gray-700 mb-1.5 block">Número de boleta *</Label>
-                <Input value={numeroBoleta} onChange={(e) => setNumeroBoleta(e.target.value)} maxLength={50} className="h-11" />
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {pideDeposito && (
+            <div className="sm:col-span-2">
+              <CamposDeposito
+                form={formDeposito}
+                onChange={(cambios) => {
+                  if (cambios.monto !== undefined) setMontoEditado(true);
+                  setDeposito((prev) => ({ ...prev, ...cambios }));
+                }}
+                porCubrir={total}
+              />
+            </div>
+          )}
+
+          {depositosGuardados.length > 0 && (
+            <p className="sm:col-span-2 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+              Este pedido ya tiene {depositosGuardados.length === 1 ? "un depósito" : `${depositosGuardados.length} depósitos`} por{" "}
+              {formatearQuetzales(pedido?.depositado ?? 0)}. Para agregar o quitar depósitos usa Buscar Pedidos.
+            </p>
+          )}
 
           <div className="sm:col-span-2">
             <Label className="text-xs text-gray-700 mb-1.5 block">Comentario</Label>
@@ -1264,6 +1346,7 @@ function NuevoPedido({
             setClienteId(nuevo.id);
             setDireccion(nuevo.direccion ?? "");
             setTelefono(nuevo.telefono ?? "");
+            setNit(nuevo.nit ?? "");
             setMostrarNuevoCliente(false);
           }}
         />

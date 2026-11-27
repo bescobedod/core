@@ -8,6 +8,7 @@ import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Input } from "../ui/input";
 import { cambiarFechaRequeridaPedido } from "../api/PedidoPosApi";
+import { cambiarFechaRequeridaArtesano } from "../api/PedidoArtesanoRutaApi";
 
 // Cambio de fecha de entrega de un pedido, compartido por las vistas de
 // Pedidos de Pollo y de Insumos. El backend vuelve a validar todo; esto solo
@@ -28,6 +29,8 @@ export interface PedidoCambioFecha {
   etiqueta?: string;
   // Verduras: solo se entregan jueves o viernes (el backend también lo valida).
   soloJuevesViernes?: boolean;
+  // Pedido de un cliente externo (pollo artesano): usa su propio servicio.
+  esCliente?: boolean;
 }
 
 function fechaDdMmAaaa(fechaIso: string) {
@@ -92,7 +95,9 @@ export function CambiarFechaPedidoModal({ pedido, onClose, onActualizado }: Camb
     setGuardando(true);
 
     try {
-      const r = await cambiarFechaRequeridaPedido(pedido.pedido_id, nuevaFecha);
+      const r = pedido.esCliente
+        ? await cambiarFechaRequeridaArtesano(pedido.pedido_id, nuevaFecha)
+        : await cambiarFechaRequeridaPedido(pedido.pedido_id, nuevaFecha);
       setResultado({
         ok: true,
         mensaje: `El pedido ${r.numero_pedido} ahora se entrega el ${fechaDdMmAaaa(r.fecha_requerida)}.`,
@@ -143,7 +148,7 @@ export function CambiarFechaPedidoModal({ pedido, onClose, onActualizado }: Camb
                 <CalendarClock size={18} className="text-[#2183AE]" /> Cambiar fecha de entrega
               </DialogTitle>
               <DialogDescription className="text-gray-600">
-                {pedido.nombre_tienda || "Tienda sin identificar"} · {pedido.numero_pedido}
+                {pedido.nombre_tienda || (pedido.esCliente ? "Cliente sin identificar" : "Tienda sin identificar")} · {pedido.numero_pedido}
                 {pedido.etiqueta ? ` · ${pedido.etiqueta}` : ""}
               </DialogDescription>
             </DialogHeader>

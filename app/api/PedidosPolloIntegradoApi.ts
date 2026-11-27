@@ -174,34 +174,14 @@ export async function guardarAsignacionIntegrada(rutaId: string, fecha: string, 
   }
 }
 
-export interface ResultadoEnvioIntegrado {
-  docTiendas: number | null;
-  docClientes: number | null;
-}
-
-// Envía a SAP: primero los clientes (sin liberar el candado) y después las tiendas, que liberan la ruta.
-// Si el envío se corta a la mitad, al reintentar solo se envía lo que quedó pendiente.
-export async function enviarPolloIntegrado(rutaId: string, fecha: string, ruta: PedidoPosRuta | null): Promise<ResultadoEnvioIntegrado> {
-  const hayTiendas = !ruta || ruta.tiendas.some((t) => !esCliente(t));
+// Envía a SAP en un solo documento. Con clientes validados, su servicio envía en la misma transferencia las tiendas pendientes;
+// sin clientes, el envío de tiendas de siempre.
+export async function enviarPolloIntegrado(rutaId: string, fecha: string, ruta: PedidoPosRuta | null): Promise<number> {
   const clientesValidados = !!ruta && ruta.tiendas.some((t) => esCliente(t) && t.estado === "VALIDADO");
-  let docClientes: number | null = null;
-  let docTiendas: number | null = null;
 
-  if (clientesValidados) {
-    docClientes = (await enviarRutaArtesano(rutaId, fecha, !hayTiendas)).sap_docnum;
-  }
+  if (clientesValidados) return (await enviarRutaArtesano(rutaId, fecha)).sap_docnum;
 
-  if (hayTiendas) {
-    try {
-      docTiendas = (await enviarTransferenciaPollo(rutaId, fecha)).sap_docnum;
-    } catch (e) {
-      const mensaje = e instanceof Error ? e.message : "Error al enviar la transferencia";
-
-      throw new Error(docClientes !== null ? `Los clientes ya salieron (transferencia SAP #${docClientes}), pero las tiendas no: ${mensaje}` : mensaje);
-    }
-  }
-
-  return { docTiendas, docClientes };
+  return (await enviarTransferenciaPollo(rutaId, fecha)).sap_docnum;
 }
 
 // "Trasladar Envío": cambia piloto y camión de la ruta en tránsito y deja el piloto nuevo también en los pedidos de clientes.

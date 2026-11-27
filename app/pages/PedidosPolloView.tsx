@@ -469,10 +469,9 @@ function StoreCard({ tienda, onCambiarFecha, onCancelar }: {
               <div className="px-6 pt-3 text-xs text-gray-500 space-y-0.5">
                 <p>Tienda de referencia: <span className="font-medium text-gray-700">{tienda.nombre_tienda_referencia || "Sin tienda de referencia"}</span></p>
                 {tienda.direccion_entrega && <p>Dirección: <span className="font-medium text-gray-700">{tienda.direccion_entrega}</span></p>}
-                <p>Entrega: <span className="font-medium text-gray-700">{tienda.fecha_requerida?.split("-").reverse().join("/")}</span></p>
               </div>
             )}
-            {!cliente && (onCambiarFecha || onCancelar) && (
+            {(onCambiarFecha || (onCancelar && !cliente)) && (
               <div className="flex items-center gap-2 px-6 pt-3 text-xs text-gray-500">
                 <span className="flex-1">
                   Entrega: <span className="font-medium text-gray-700">{tienda.fecha_requerida?.split("-").reverse().join("/")}</span>
@@ -484,12 +483,14 @@ function StoreCard({ tienda, onCambiarFecha, onCancelar }: {
                       numero_pedido: tienda.numero_pedido,
                       nombre_tienda: tienda.nombre_tienda || tienda.codigo_tienda,
                       fecha_requerida: tienda.fecha_requerida,
-                      estado: tienda.estado,
+                      // Un cliente "creado" se muestra como Recibido, igual que en las tiendas.
+                      estado: cliente ? (tienda.estado_origen === "CREADO" ? "RECIBIDO" : tienda.estado_origen || tienda.estado) : tienda.estado,
+                      esCliente: cliente,
                     }}
                     onClick={onCambiarFecha}
                   />
                 )}
-                {onCancelar && (
+                {onCancelar && !cliente && (
                   <BotonCancelarPedido
                     pedido={{
                       pedido_id: tienda.pedido_id,
@@ -512,7 +513,10 @@ function StoreCard({ tienda, onCambiarFecha, onCancelar }: {
                       <p className="text-xs text-gray-400">{item.codigo_producto} · {item.unidad_medida}</p>
                     </div>
                   </div>
-                  <p className="text-sm text-gray-600 tabular-nums shrink-0">{item.cantidad_solicitada}</p>
+                  <p className="text-sm text-gray-600 tabular-nums shrink-0">
+                    {/* Los clientes piden en sus unidades (paquetes); aquí se muestran en unidades de SAP, como las tiendas. */}
+                    {cliente ? (Number(item.cantidad_solicitada) * (item.unidades_sap ?? 1)).toFixed(3) : item.cantidad_solicitada}
+                  </p>
                 </div>
               ))}
             </div>
@@ -680,20 +684,21 @@ export function AsignacionFifoModal({ grupos, fecha, guardando, error, onClose, 
                           </p>
                           <p className="text-xs text-gray-400">
                             {linea.numero_pedido} · {linea.fecha_pedido} {linea.hora_pedido}
-                            {factorLinea > 1 && <span> · 1 unidad = {factorLinea} en SAP</span>}
                           </p>
                         </div>
                         <div className="flex items-center gap-3 shrink-0">
-                          <span className="text-xs text-gray-400">Solicitó <span className="text-gray-600 tabular-nums">{linea.cantidad_solicitada}</span></span>
+                          <span className="text-xs text-gray-400">Solicitó <span className="text-gray-600 tabular-nums">{linea.cantidad_solicitada * factorLinea}</span></span>
                           <div className="flex items-center gap-1.5">
                             <span className="text-xs text-gray-400">Asignado</span>
                             <input
                               type="number"
                               min={0}
-                              max={maxPermitido}
-                              value={linea.cantidad_asignada}
+                              step={factorLinea}
+                              max={maxPermitido * factorLinea}
+                              value={linea.cantidad_asignada * factorLinea}
                               onChange={e => {
-                                const valor = Math.max(0, Math.min(maxPermitido, parseInt(e.target.value) || 0));
+                                // Se muestra en unidades de SAP; el pedido del cliente se guarda en sus unidades (paquetes).
+                                const valor = Math.max(0, Math.min(maxPermitido, Math.floor((parseInt(e.target.value) || 0) / factorLinea)));
                                 onCambiarCantidad(grupo.codigo_producto, linea.detalle_id, valor);
                               }}
                               className="w-16 text-sm text-center border border-gray-300 rounded-lg px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-[#2183AE]/40 focus:border-[#2183AE] tabular-nums"
@@ -1141,15 +1146,11 @@ function PedidosPolloViewCompleta() {
     setErrorEnviarSap(null);
 
     try {
-      const resultado = await enviarPolloIntegrado(candado.ruta_id, candado.fecha, pedidoRuta);
+      const documento = await enviarPolloIntegrado(candado.ruta_id, candado.fecha, pedidoRuta);
 
       // Éxito: SAP liberó el candado del lado del backend, así que
       // volvemos a la pantalla de selección
-      const documentos = [
-        resultado.docTiendas !== null && `tiendas SAP #${resultado.docTiendas}`,
-        resultado.docClientes !== null && `clientes SAP #${resultado.docClientes}`,
-      ].filter(Boolean);
-      alert(`Transferencia enviada. Documento${documentos.length > 1 ? "s" : ""}: ${documentos.join(" · ")}`);
+      alert(`Transferencia enviada. Documento SAP #${documento}`);
       setCandado(null);
       setRutaActual(null);
       setPedidoRuta(null);
@@ -1250,7 +1251,7 @@ function PedidosPolloViewCompleta() {
     setErrorQr(null);
 
     try {
-      const url = await previsualizarQrsRutaPollo(rutaId, fecha);
+      const url = await previsualizarQrsRutaPollo(rutaId, fecha, true);
       setQrUrl(url);
       setShowQrModal(true);
     } catch (err) {
@@ -1551,7 +1552,6 @@ function PedidosPolloViewCompleta() {
               {ESTADOS_CON_QR.includes(previewRuta.estado_general) && (
                 <div className="mb-3">
                   <div className="flex items-center gap-2">
-                    {previewRuta.tiendas.some(t => !esCliente(t)) && (
                     <Button
                       onClick={() => handlePrevisualizarTicket(rutaElegidaId, fechaElegida, previewRuta.estado_general === "EN_TRANSITO")}
                       disabled={cargandoTicket}
@@ -1561,7 +1561,6 @@ function PedidosPolloViewCompleta() {
                       {cargandoTicket ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <FileText size={14} className="mr-1.5" />}
                       Ver ticket
                     </Button>
-                    )}
                     {previewRuta.estado_general === "EN_TRANSITO" && (
                       <Button
                         onClick={() => { setTrasladoAbierto(v => !v); setTrasladoError(null); }}
@@ -1631,7 +1630,7 @@ function PedidosPolloViewCompleta() {
                   )}
                 </div>
               )}
-              {ESTADOS_CON_QR.includes(previewRuta.estado_general) && previewRuta.tiendas.some(t => !esCliente(t)) && (
+              {ESTADOS_CON_QR.includes(previewRuta.estado_general) && (
                 <div className="mb-3">
                   <Button
                     onClick={() => handlePrevisualizarQr(rutaElegidaId, fechaElegida)}
@@ -1803,7 +1802,7 @@ function PedidosPolloViewCompleta() {
                       Resumen de ruta
                     </Button>
                   )}
-                  {pedidoRuta && ESTADOS_CON_QR.includes(pedidoRuta.estado_general) && pedidoRuta.tiendas.some(t => !esCliente(t)) && (
+                  {pedidoRuta && ESTADOS_CON_QR.includes(pedidoRuta.estado_general) && (
                     <Button
                       onClick={() => handlePrevisualizarQr(candado?.ruta_id || rutaElegidaId, candado?.fecha || fechaElegida)}
                       disabled={cargandoQr}
